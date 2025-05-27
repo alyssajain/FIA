@@ -1,0 +1,174 @@
+---
+title: "Exploratory"
+author: "Alyssa"
+date: "2/19/2025"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# read in packages
+# install.packages("FIESTAutils")
+# install.packages("FIESTA")
+# install.packages("shiny")
+# install.packages("readr")
+
+#library(readr)
+library(FIESTA)
+#library(tidyverse) 
+
+```
+
+Aboveground Live Biomass and Carbon
+```{r}
+
+# pop est unit table
+popest <- DBgetCSV("POP_ESTN_UNIT", "California")
+head(popest)
+
+# get CA data
+ CAtrees <- DBgetCSV("TREE", "California") # tree data
+dim(CAtrees)
+              
+ CAconds <- DBgetCSV("COND", "California") # condition data
+dim(CAconds)
+
+ CAplots <- DBgetCSV("PLOT", "California") # plot data
+dim(CAplots)
+
+
+# live biomass and carbon by plot_cn
+sum_biomass_c <- datSumTree(tree = CAtrees,
+                      tsumvarlst = c("CARBON_AG", "DRYBIO_AG"),
+                      tfilter = "STATUSCD == 1")
+
+names(sum_biomass_c) 
+head(sum_biomass_c$treedat)
+```
+
+# get CA estimate
+```{r}
+# STEP 1: get strata information to feed into modGBpop()
+CAstrat1 <- DBgetStrata(states = "California",
+eval_opts = list(Cur = TRUE))
+
+  # check data
+  names(CAstrat1)
+  head(CAstrat1$unitvar)
+
+
+
+# STEP 2: get population data
+GBpopdat <- modGBpop(popTabs = popTables(cond = CAconds,          # FIA plot/condition data
+                                    tree = CAtrees,          # FIA tree data
+                                    plt = CAplots),         # FIA plot data
+                     popTabIDs = list(cond = "PLT_CN"),             # unique ID of plot in cond
+                     pltassgn = CAstrat1$pltassgn,                 # plot assignments
+                     pltassgnid = "PLT_CN",   
+
+                     unitarea = CAstrat1$unitarea,                 # area by estimation units
+                     unitvar = CAstrat1$unitvar,                         # name of estimation unit variable
+                     strata = TRUE,                                 # if using post-stratification
+                     stratalut = CAstrat1$stratalut,               # strata classes and pixels counts
+                     strata_opts = strata_options(getwt = TRUE))    # strata options
+
+  # check
+  names(GBpopdat)
+
+# STEP 3: calculate live AG carbon by ownership class
+tree1.2 <- modGBtree(GBpopdat = GBpopdat,               # pop - population calculations
+                     landarea = "FOREST",               # est - all land filter
+                     sumunits = TRUE,                   # est - sum estimation units to population
+                     estvar = "CARBON_AG",               # est - carbon 
+                     estvar.filter = "STATUSCD == 1",   # est - live trees only
+                     rowvar = "OWNCD",               # est - row domain 
+                     returntitle = TRUE)                # out - return title information
+  # check
+  names(tree1.2)
+  
+  # estimate and percent sampling error of estimate
+  tree1.2$est
+   
+  # Raw data (list object) for estimate
+  raw1.2 <- tree1.2$raw      # extract raw data list object from output
+  names(raw1.2)
+  
+  # estimates by row, for CA
+  head(raw1.2$rowest) 
+  
+  # Titles (list object) for estimate
+  titlelst1.2 <- tree1.2$titlelst
+  
+  # barplot
+  datBarplot(raw1.2$unit_rowest, 
+           xvar = titlelst1.2$title.rowvar, 
+           yvar = "est")
+  
+```
+# get change estimates
+```{r}
+# Step 1: load in necessary tables
+
+CAtrees_grmb <- DBgetCSV("TREE_GRM_BEGIN", "California") # tree data begin
+dim(CAtrees_grmb)
+
+CAtrees_grmm <- DBgetCSV("TREE_GRM_MIDPT", "California") # tree data midpoint
+dim(CAtrees_grmm)
+
+CAtrees_grm <- DBgetCSV("TREE_GRM_COMPONENT", "California") # tree grm component
+dim(CAtrees_grm)
+
+# Step 2: Growth 
+  # Step 2.1: Calculate Carbon Estimate for Trees at T1
+    
+    # Step 2.1.1get population data
+    GBpopdat_grmb <- modGBpop(popTabs = popTables(cond = CAconds,          # FIA plot/condition data
+                                        tree = CAtrees,
+                                        tree_grm_begin = CAtrees_grmb,          # FIA tree data at T1
+                                        plt = CAplots),         # FIA plot data
+                         popTabIDs = list(cond = "PLT_CN"),             # unique ID of plot in cond
+                         pltassgn = CAstrat1$pltassgn,                 # plot assignments
+                         pltassgnid = "PLT_CN",   
+    
+                         unitarea = CAstrat1$unitarea,                 # area by estimation units
+                         unitvar = CAstrat1$unitvar,                         # name of estimation unit variable
+                         strata = TRUE,                                 # if using post-stratification
+                         stratalut = CAstrat1$stratalut,               # strata classes and pixels counts
+                         strata_opts = strata_options(getwt = TRUE))    # strata options
+
+  # check
+  names(GBpopdat_grmb)
+
+    # Step 2.1.2 calculate live AG carbon by ownership class
+    tree1.2_grmb <- modGBtree(GBpopdat = GBpopdat_grmb,               # pop - population calculations
+                         landarea = "FOREST",               # est - all land filter
+                         sumunits = TRUE,                   # est - sum estimation units to population
+                         estvar = "CARBON_AG",               # est - carbon 
+                         estvar.filter = "STATUSCD == 1",   # est - live trees only
+                         rowvar = "OWNCD",               # est - row domain 
+                         returntitle = TRUE)                # out - return title information
+      # check
+      names(tree1.2_grmb)
+      
+      # estimate and percent sampling error of estimate
+      tree1.2_grmb$est
+      
+      # Raw data (list object) for estimate
+      raw1.2_grmb <- tree1.2_grmb$raw      # extract raw data list object from output
+      names(raw1.2_grmb)
+      
+      # estimates by row, for CA
+      head(raw1.2_grmb$rowest) 
+      
+      # Titles (list object) for estimate
+      titlelst1.2_grmb <- tree1.2_grmb$titlelst
+      
+      # barplot
+      datBarplot(raw1.2_grmb$unit_rowest, 
+               xvar = titlelst1.2_grmb$title.rowvar, 
+               yvar = "est")
+
+  
+  
+```
