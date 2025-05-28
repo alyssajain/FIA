@@ -1,0 +1,1032 @@
+---
+title: "rFIA carbon"
+author: "Alyssa"
+date: "4/9/2025"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rFIA)
+library(ggplot2)
+library(dplyr)
+library(stats)
+library(knitr)
+library(tidyverse)
+library(tidyr)
+library(stringr)
+library(readr)
+library(sf)
+```
+
+load data
+```{r}
+ca_data <- readFIA("/Volumes/Alyssa_Backup/CA_CSV") 
+min_travel_time <- read_csv("min_travel_time.csv")
+              
+```
+
+## Carbon Calculations
+
+Carbon by pool
+
+```{r}
+carbon(db = ca_data, byPool = TRUE)
+```
+Carbon by ownership
+
+```{r}
+#create table of carbon by pool and ownership
+ownership <- carbon(db = ca_data, byPool = TRUE, grpBy = OWNGRPCD)
+
+#aggregate by ownership and pool
+ownership_summary <- ownership %>%
+  group_by(OWNGRPCD, POOL) %>%
+  summarise(
+    CARB_ACRE = mean(CARB_ACRE),
+    CARB_ACRE_SE = mean(CARB_ACRE_SE),
+    .groups = 'drop'
+  )
+
+# factorize
+ownership_summary$POOL <- factor(ownership_summary$POOL)
+ownership_summary$OWNGRPCD <- as.factor(ownership_summary$OWNGRPCD)
+
+# plot
+ggplot(ownership_summary, aes(x = OWNGRPCD, y = CARB_ACRE, fill = POOL)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+
+
+```
+# Carbon by management
+
+regeneration
+```{r}
+# natural (0) or artificial (1) regeneration
+stand_regeneration <- carbon(db = ca_data, byPool = FALSE, grpBy = c(STDORGCD, OWNGRPCD))
+stand_regeneration
+
+#aggregate by ownership and pool
+stand_regeneration_summary <- stand_regeneration %>%
+  group_by(OWNGRPCD, STDORGCD) %>%
+  summarise(
+    CARB_ACRE = mean(CARB_ACRE),
+    CARB_ACRE_SE = mean(CARB_ACRE_SE),
+    .groups = 'drop'
+  )
+
+# factorize
+stand_regeneration_summary$STDORGCD <- factor(stand_regeneration_summary$STDORGCD)
+stand_regeneration_summary$OWNGRPCD <- as.factor(stand_regeneration_summary$OWNGRPCD)
+
+# plot
+ggplot(stand_regeneration_summary, aes(x = OWNGRPCD, y = CARB_ACRE, fill = STDORGCD)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+
+```
+treatment
+```{r}
+# treatment code 1
+treatment1 <- carbon(db = ca_data, grpBy = TRTCD1)
+treatment1
+
+#aggregate by trtcd
+carbon_by_treatment <- aggregate(CARB_ACRE ~ TRTCD1, data = treatment1, sum)
+
+# barplot
+barplot(carbon_by_treatment$CARB_ACRE,
+        names.arg = carbon_by_treatment$TRTCD1,
+        main = "Carbon by Treatment",
+        xlab = "Treatment Code",
+        ylab = "Carbon per Acre",
+        las = 2)  # makes x-axis labels vertical for readability
+
+# treatment and ownership
+treatment_own <- carbon(db = ca_data, grpBy = c(TRTCD1, OWNGRPCD))
+
+#factorize
+treatment_own$TRTCD1 <- as.factor(treatment_own$TRTCD1)
+levels(treatment_own$TRTCD1) # get different factor levels
+levels(treatment_own$TRTCD1) <- c("None", "Cutting", "Regeneration Prep", "Artificial Regen", "Natural Regen", "Other") # rename for readability
+
+treatment_own$OWNGRPCD <- as.factor(treatment_own$OWNGRPCD)
+levels(treatment_own$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")
+
+
+#aggregate by treatment and ownership
+treatment_own_summary <- treatment_own %>%
+  group_by(OWNGRPCD, TRTCD1) %>%
+  summarise(
+    CARB_ACRE = mean(CARB_ACRE),
+    CARB_ACRE_SE = mean(CARB_ACRE_SE),
+    .groups = 'drop'
+  )
+
+# plot
+ggplot(treatment_own_summary, aes(x = OWNGRPCD, y = CARB_ACRE, fill = TRTCD1)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+ 
+
+#plot without SE
+ggplot(treatment_own, aes(fill=TRTCD1, y=CARB_ACRE, x=OWNGRPCD)) + 
+    geom_bar(position="dodge", stat="identity")
+
+```
+cutting
+```{r}
+# stumps (cutting) and ownership
+cutting_own <- carbon(db = ca_data, grpBy = c(STUMP_CD_PNWRS, OWNGRPCD))
+
+#factorize
+cutting_own$STUMP_CD_PNWRS <- as.factor(cutting_own$STUMP_CD_PNWRS)
+levels(cutting_own$STUMP_CD_PNWRS) # get different factor levels
+
+cutting_own$OWNGRPCD <- as.factor(cutting_own$OWNGRPCD)
+levels(cutting_own$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")  # rename for readability
+
+#aggregate by treatment and ownership
+cutting_own_summary <- cutting_own %>%
+  group_by(OWNGRPCD, STUMP_CD_PNWRS) %>%
+  summarise(
+    CARB_ACRE = mean(CARB_ACRE),
+    CARB_ACRE_SE = mean(CARB_ACRE_SE),
+    .groups = 'drop'
+  )
+
+# plot
+ggplot(cutting_own_summary, aes(x = OWNGRPCD, y = CARB_ACRE, fill = STUMP_CD_PNWRS)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+
+
+#plot without SE
+ggplot(cutting_own, aes(fill=STUMP_CD_PNWRS, y=CARB_ACRE, x=OWNGRPCD)) + 
+    geom_bar(position="dodge", stat="identity")
+```
+
+site productivity code
+```{r}
+#site productivity and ownership
+prod_own <- carbon(db = ca_data, grpBy = c(SITECLCD, OWNGRPCD))
+
+
+#factorize
+prod_own$SITECLCD <- as.factor(prod_own$SITECLCD)
+levels(prod_own$SITECLCD) # get different factor levels
+
+prod_own$OWNGRPCD <- as.factor(prod_own$OWNGRPCD)
+levels(prod_own$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")  # rename for readability
+
+#aggregate by productivity and ownership
+prod_own_summary <- prod_own %>%
+  group_by(OWNGRPCD, SITECLCD) %>%
+  summarise(
+    CARB_ACRE = mean(CARB_ACRE),
+    CARB_ACRE_SE = mean(CARB_ACRE_SE),
+    .groups = 'drop'
+  )
+
+# plot
+ggplot(prod_own_summary, aes(x = OWNGRPCD, y = CARB_ACRE, fill = SITECLCD)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+
+
+#plot without SE
+ggplot(prod_own, aes(fill=SITECLCD, y=CARB_ACRE, x=OWNGRPCD)) + 
+    geom_bar(position="dodge", stat="identity")
+```
+forest type
+```{r}
+# read in fortypcd and group csv to aggregate later
+fortypgrp <- read.csv("FORTYPCD_GRPCD.csv")
+
+#find most common forest types by acre
+fortyp_area <- area(db = ca_data, grpBy = FORTYPCD)
+agg = aggregate(fortyp_area,
+by = list(fortyp_area$FORTYPCD),
+FUN = mean) #aggregate years
+
+fortyp_order <- agg %>%
+  arrange(desc(AREA_TOTAL))
+
+top_fortyp <- agg %>%
+  arrange(desc(AREA_TOTAL)) %>%
+  slice_head(n = 6) %>%
+  pull(FORTYPCD) # get top 6 forest type cd
+top_fortyp
+
+#now filter carbon by top fortypcd when doing carbon ownership analysis
+top_fortyp_own <- carbon(db = ca_data, grpBy = c(FORTYPCD, OWNGRPCD))
+top_fortyp_own$FORTYPCD <- as.factor(top_fortyp_own$FORTYPCD)
+
+#filter
+top_fortyp_own <- top_fortyp_own %>%
+  filter(FORTYPCD %in% top_fortyp)
+# check
+summary(top_fortyp_own$FORTYPCD)
+
+top_fortyp_own$OWNGRPCD <- as.factor(top_fortyp_own$OWNGRPCD)
+levels(top_fortyp_own$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")  # rename for readability
+
+#plot
+ggplot(top_fortyp_own, aes(fill=FORTYPCD, y=CARB_ACRE, x=OWNGRPCD)) + 
+    geom_bar(position="dodge", stat="identity")
+
+# error bars
+#aggregate by fortyp and ownership
+top_fortyp_own_summary <- top_fortyp_own %>%
+  group_by(OWNGRPCD, FORTYPCD) %>%
+  summarise(
+    CARB_ACRE = mean(CARB_ACRE),
+    CARB_ACRE_SE = mean(CARB_ACRE_SE),
+    .groups = 'drop'
+  )
+
+# plot
+ggplot(top_fortyp_own_summary, aes(x = OWNGRPCD, y = CARB_ACRE, fill = FORTYPCD)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+####################
+# fortype by owner by area
+fortyp_area_own <- area(db = ca_data, grpBy = c(FORTYPCD, OWNGRPCD))
+fortyp_area_own$FORTYPCD <- as.factor(fortyp_area_own$FORTYPCD)
+
+#filter
+top_fortyp_area_own <- fortyp_area_own %>%
+  filter(FORTYPCD %in% top_fortyp)
+# check
+summary(top_fortyp_area_own$FORTYPCD)
+
+top_fortyp_area_own$OWNGRPCD <- as.factor(top_fortyp_area_own$OWNGRPCD)
+levels(top_fortyp_area_own$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")  # rename for readability
+
+#plot
+ggplot(top_fortyp_area_own, aes(fill=FORTYPCD, y=AREA_TOTAL, x=OWNGRPCD)) + 
+    geom_bar(position="dodge", stat="identity")
+
+ggplot(top_fortyp_area_own, aes(fill=FORTYPCD, y=PERC_AREA, x=OWNGRPCD)) + 
+    geom_bar(position="dodge", stat="identity")
+
+# error bars
+#aggregate by fortyp and ownership
+top_fortyp_area_own_summary <- top_fortyp_area_own %>%
+  group_by(OWNGRPCD, FORTYPCD) %>%
+  summarise(
+    PERC_AREA = mean(PERC_AREA),
+    PERC_AREA_SE = mean(PERC_AREA_SE),
+    .groups = 'drop'
+  )
+
+# plot
+ggplot(top_fortyp_area_own_summary, aes(x = OWNGRPCD, y = PERC_AREA, fill = FORTYPCD)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = PERC_AREA - PERC_AREA_SE, ymax = PERC_AREA + PERC_AREA_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+
+###################
+
+#carbon
+fortyp_own <- carbon(db = ca_data, grpBy = c(FORTYPCD, OWNGRPCD))
+fortyp_own
+fortyp_own$FORTYPCD <- as.factor(fortyp_own$FORTYPCD)
+
+levels(fortyp_own$FORTYPCD) # get different factor levels
+
+
+fortyp_own$OWNGRPCD <- as.factor(fortyp_own$OWNGRPCD)
+levels(fortyp_own$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")  # rename for readability
+
+
+#plot
+ggplot(fortyp_own, aes(fill=FORTYPCD, y=CARB_ACRE, x=OWNGRPCD)) + 
+    geom_bar(position="dodge", stat="identity")
+```
+```{r}
+# disturbance
+dstrb_own <- carbon(db = ca_data, grpBy = c(DSTRBCD1, OWNGRPCD))
+
+# factorize
+dstrb_own$DSTRBCD1 <- as.factor(dstrb_own$DSTRBCD1)
+levels(dstrb_own$DSTRBCD1) # get different factor levels
+
+# aggregate disturbance codes
+dstrb_own_grp <- dstrb_own %>%
+  mutate(
+    DSTRBCD1 = case_when(
+      DSTRBCD1 %in% 10:12 ~ "Insect",
+      DSTRBCD1 %in% 20:22 ~ "Disease",
+      DSTRBCD1 %in% 30:32 ~ "Fire",
+      DSTRBCD1 %in% 40:46 ~ "Animal",
+      DSTRBCD1 %in% 50:54 ~ "Weather",
+      DSTRBCD1 == 60:62 ~ "Vegetation",
+      DSTRBCD1 == 70:79 ~ "Unknown",
+      DSTRBCD1 == 80    ~ "Human",
+      DSTRBCD1 %in% 90:95 ~ "Geologic",
+      TRUE                        ~ "Other"
+    )
+  )
+
+# factor owners
+dstrb_own_grp$OWNGRPCD <- as.factor(dstrb_own_grp$OWNGRPCD)
+levels(dstrb_own_grp$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")  # rename for readability
+
+#aggregate by disturbance and ownership
+dstrb_own_grp_summary <- dstrb_own_grp %>%
+  group_by(OWNGRPCD, DSTRBCD1) %>%
+  summarise(
+    CARB_ACRE = mean(CARB_ACRE),
+    CARB_ACRE_SE = mean(CARB_ACRE_SE),
+    .groups = 'drop'
+  )
+
+# plot
+ggplot(dstrb_own_grp_summary, aes(x = OWNGRPCD, y = CARB_ACRE, fill = DSTRBCD1)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+
+```
+
+
+available moisture
+```{r}
+#site productivity and ownership
+moist_own <- carbon(db = ca_data, grpBy = c(PHYSCLCD, OWNGRPCD))
+
+#factorize
+moist_own$PHYSCLCD <- as.factor(moist_own$PHYSCLCD)
+levels(moist_own$PHYSCLCD) # get different factor levels
+
+moist_own$OWNGRPCD <- as.factor(moist_own$OWNGRPCD)
+levels(moist_own$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")  # rename for readability
+
+#aggregate by moist and ownership
+moist_own_summary <- moist_own %>%
+  group_by(OWNGRPCD, PHYSCLCD) %>%
+  summarise(
+    CARB_ACRE = mean(CARB_ACRE),
+    CARB_ACRE_SE = mean(CARB_ACRE_SE),
+    .groups = 'drop'
+  )
+
+# plot
+ggplot(moist_own_summary, aes(x = OWNGRPCD, y = CARB_ACRE, fill = PHYSCLCD)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+
+
+#plot
+ggplot(moist_own, aes(fill=PHYSCLCD, y=CARB_ACRE, x=OWNGRPCD)) + 
+    geom_bar(position="dodge", stat="identity")
+```
+stocking
+```{r}
+#site productivity and ownership
+stock_own <- carbon(db = ca_data, grpBy = c(GSSTKCD, OWNGRPCD))
+
+#factorize
+stock_own$GSSTKCD <- as.factor(stock_own$GSSTKCD)
+levels(stock_own$GSSTKCD) # get different factor levels
+
+stock_own$OWNGRPCD <- as.factor(stock_own$OWNGRPCD)
+levels(stock_own$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")  # rename for readability
+
+
+#aggregate by stocking and ownership
+stock_own_summary <- stock_own %>%
+  group_by(OWNGRPCD, GSSTKCD) %>%
+  summarise(
+    CARB_ACRE = mean(CARB_ACRE),
+    CARB_ACRE_SE = mean(CARB_ACRE_SE),
+    .groups = 'drop'
+  )
+
+# plot
+ggplot(stock_own_summary, aes(x = OWNGRPCD, y = CARB_ACRE, fill = GSSTKCD)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.4,
+    colour = "black",
+    alpha = 0.9,
+    size = 0.5
+  )
+
+```
+## growMort
+```{r}
+# get carbon flux by ownership
+carb_grm_agg <- growMort(ca_data, stateVar = "CARB", grpBy = "OWNGRPCD")
+
+#factorize
+carb_grm_agg$OWNGRPCD <- as.factor(carb_grm_agg$OWNGRPCD)
+levels(carb_grm_agg$OWNGRPCD) <- c("Forest Service", "Other Federal", "State/Local Gov", "Private")  # rename for readability
+
+#aggregate by ownership
+carb_grm_summary <- carb_grm_agg %>%
+  group_by(OWNGRPCD) %>%
+  summarise(
+    RECR_CARB_ACRE = mean(RECR_CARB_ACRE),
+    RECR_CARB_ACRE_SE = mean(RECR_CARB_ACRE_SE),
+    MORT_CARB_ACRE = mean(MORT_CARB_ACRE),
+    MORT_CARB_ACRE_SE = mean(MORT_CARB_ACRE_SE),
+    REMV_CARB_ACRE = mean(REMV_CARB_ACRE),
+    REMV_CARB_ACRE_SE = mean(REMV_CARB_ACRE_SE),
+    GROW_CARB_ACRE = mean(GROW_CARB_ACRE),
+    GROW_CARB_ACRE_SE = mean(GROW_CARB_ACRE_SE),
+    CHNG_CARB_ACRE = mean(CHNG_CARB_ACRE),
+    .groups = 'drop'
+  )
+
+# make mort and remv negative
+carb_grm_summary$MORT_CARB_ACRE <- carb_grm_summary$MORT_CARB_ACRE * -1
+carb_grm_summary$REMV_CARB_ACRE <- carb_grm_summary$REMV_CARB_ACRE * -1
+## comparison
+
+# 1. Pivot GRM values to long format
+grm_vals <- carb_grm_summary %>%
+  select(OWNGRPCD, RECR_CARB_ACRE, MORT_CARB_ACRE, REMV_CARB_ACRE, GROW_CARB_ACRE) %>%
+  pivot_longer(
+    cols = ends_with("CARB_ACRE"),
+    names_to = "GRM",
+    values_to = "CARB_ACRE"
+  ) %>%
+  mutate(GRM = str_remove(GRM, "_CARB_ACRE"))
+
+# 2. Pivot SE values to long format
+grm_ses <- carb_grm_summary %>%
+  select(OWNGRPCD, RECR_CARB_ACRE_SE, MORT_CARB_ACRE_SE, REMV_CARB_ACRE_SE, GROW_CARB_ACRE_SE) %>%
+  pivot_longer(
+    cols = ends_with("_SE"),
+    names_to = "GRM",
+    values_to = "CARB_ACRE_SE"
+  ) %>%
+  mutate(GRM = str_remove(GRM, "_CARB_ACRE_SE"))
+
+# 3. Join the values + SEs
+grm_combined <- left_join(grm_vals, grm_ses, by = c("OWNGRPCD", "GRM"))
+
+
+# 4. Plot
+# stacked
+  # Pivot CHNG values to long format
+  chng_vals <- carb_grm_summary %>%
+    select(OWNGRPCD, CHNG_CARB_ACRE) %>%
+    pivot_longer(
+      cols = ends_with("CARB_ACRE"),
+      names_to = "GRM",
+      values_to = "CARB_ACRE"
+    ) %>%
+    mutate(GRM = str_remove(GRM, "_CARB_ACRE"))
+  
+  #plot
+  ggplot(grm_combined, aes(x = OWNGRPCD, y = CARB_ACRE, fill = GRM)) +
+    geom_bar(stat = "identity", position = "stack") + 
+    geom_point(
+    data = chng_vals,
+    aes(x = OWNGRPCD, y = CARB_ACRE),
+    color = "red",
+    size = 3
+)
+
+
+# staggered
+ggplot(grm_combined, aes(x = OWNGRPCD, y = CARB_ACRE, fill = GRM)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_errorbar(
+    aes(ymin = CARB_ACRE - CARB_ACRE_SE, ymax = CARB_ACRE + CARB_ACRE_SE),
+    position = position_dodge(width = 0.9),
+    width = 0.3,
+    color = "black"
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Ownership Group",
+    y = "Carbon per Acre",
+    fill = "GRM Component"
+  )
+
+```
+
+## spatial ownership dynamics
+```{r}
+# load in taskforce regions
+regions <- read_sf("/Volumes/Alyssa_Backup/rFIA_work/RRK_boundaries4/RRK_boundaries4.shp")
+
+# get carbon for ownership by region
+carbon_own_region <- carbon(db = ca_data, byPool = FALSE, polys = regions, grpBy = OWNGRPCD, totals = TRUE, returnSpatial = TRUE)
+
+# plot
+plot(carbon_own_region["CARB_ACRE"])
+```
+
+## Regression
+# GRM
+```{r}
+ca_cond <- ca_data$COND #cond table
+ca_plot <- ca_data$PLOT #plot table
+ca_tree <- ca_data$TREE #tree table
+
+# get grm by plot
+grm_plot <- growMort(ca_data, byPlot = TRUE, stateVar = "CARB_AG")
+
+# join
+ca_grm_table <- grm_plot %>%
+  # Join tables
+  left_join(ca_cond, by = 'PLT_CN') # The foreign key for the COND table is PLT_CN. There is always a match of the PLT_CN value to the CN value in the PLOT table.
+
+# # filter by top fortypcd
+# top_fortyp_ca_grm_table <- ca_grm_table %>%
+#   filter(FORTYPCD %in% top_fortyp)
+# # check
+# summary(top_fortyp_ca_grm_table$FORTYPCD)
+
+# # aggregate disturbances
+# # aggregate disturbance codes
+# ca_grm_table_grp <- ca_grm_table %>%
+#   mutate(
+#     DSTRBCD1 = case_when(
+#       DSTRBCD1 %in% 10:12 ~ "Insect",
+#       DSTRBCD1 %in% 20:22 ~ "Disease",
+#       DSTRBCD1 %in% 30:32 ~ "Fire",
+#       DSTRBCD1 %in% 40:46 ~ "Animal",
+#       DSTRBCD1 %in% 50:54 ~ "Weather",
+#       DSTRBCD1 == 60:62 ~ "Vegetation",
+#       DSTRBCD1 == 70:79 ~ "Unknown",
+#       DSTRBCD1 == 80    ~ "Human",
+#       DSTRBCD1 %in% 90:95 ~ "Geologic",
+#       TRUE                        ~ "Other"
+#     )
+#   )
+
+
+# make variables factors
+ca_grm_table$OWNGRPCD <- as.factor(ca_grm_table$OWNGRPCD)
+ca_grm_table$FORTYPCD <- as.factor(ca_grm_table$FORTYPCD)
+ca_grm_table$TRTCD1 <- as.factor(ca_grm_table$TRTCD1)
+ca_grm_table$SITECLCD <- as.factor(ca_grm_table$SITECLCD)
+ca_grm_table$PHYSCLCD <- as.factor(ca_grm_table$PHYSCLCD)
+ca_grm_table$RESERVCD <- as.factor(ca_grm_table$RESERVCD)
+ca_grm_table$YEAR <- as.factor(ca_grm_table$YEAR)
+ca_grm_table$DSTRBCD1 <- as.factor(ca_grm_table$DSTRBCD1)
+ca_grm_table$DSTRBCD2 <- as.factor(ca_grm_table$DSTRBCD2)
+ca_grm_table$DSTRBCD3 <- as.factor(ca_grm_table$DSTRBCD3)
+```
+
+remv estimates (lm4_remv is best so far)
+```{r}
+lm1_remv <- lm(REMV_CARB_AG_ACRE ~ OWNGRPCD, data = ca_grm_table)
+summary(lm1_remv) # Adjusted R-squared:  0.02081  
+
+lm2_remv <- lm(REMV_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD, data = ca_grm_table_grp)
+summary(lm2_remv) # Adjusted R-squared:  0.07301 
+
+lm3_remv <- lm(REMV_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1, data = ca_grm_table_grp)
+summary(lm3_remv) # Adjusted R-squared:  0.234
+
+lm4_remv <- lm(REMV_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD, data = ca_grm_table_grp)
+summary(lm4_remv) # Adjusted R-squared:  0.2423
+
+lm5_remv <- lm(REMV_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD + PHYSCLCD, data = ca_grm_table_grp)
+summary(lm5_remv) # Adjusted R-squared:  0.2422
+
+lm6_remv <- lm(REMV_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD + PHYSCLCD + DSTRBCD1, data = ca_grm_table_grp)
+summary(lm6_remv) # Adjusted R-squared:  0.242
+
+lmDSTRB_remv <- lm(REMV_CARB_AG_ACRE ~ DSTRBCD1 + DSTRBCD2 + DSTRBCD3, data = ca_grm_table_grp)
+summary(lmDSTRB_remv) # Adjusted R-squared: 0.01728
+
+lm1DSTRB_remv <- lm(REMV_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + DSTRBCD1 + DSTRBCD2 + DSTRBCD3, data = ca_grm_table_grp)
+summary(lm1DSTRB_remv) # Adjusted R-squared: 0.08971
+
+```
+
+mortality estimates
+```{r}
+lm1_mort <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD, data = ca_grm_table_grp)
+summary(lm1_mort) # Adjusted R-squared:  0.03153  
+
+lm2_mort <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD, data = ca_grm_table_grp)
+summary(lm2_mort) # Adjusted R-squared:  0.09861 
+
+lm3_mort <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1, data = ca_grm_table_grp)
+summary(lm3_mort) # Adjusted R-squared:  0.09875
+
+lm4_mort <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD, data = ca_grm_table_grp)
+summary(lm4_mort) # Adjusted R-squared:  0.1289
+
+lm5_mort <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD + PHYSCLCD, data = ca_grm_table_grp)
+summary(lm5_mort) # Adjusted R-squared:  0.1346
+
+lm6_mort <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD + PHYSCLCD + DSTRBCD1, data = ca_grm_table_grp)
+summary(lm6_mort) # Adjusted R-squared:  0.2948
+
+lm7_mort <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD + PHYSCLCD + DSTRBCD1 + YEAR, data = ca_grm_table)
+summary(lm7_mort) # Adjusted R-squared:  0.3274
+
+lmDSTRB_mort <- lm(MORT_CARB_AG_ACRE ~ DSTRBCD1 + DSTRBCD2 + DSTRBCD3, data = ca_grm_table_grp)
+summary(lmDSTRB_mort) # Adjusted R-squared: 0.2692 
+
+lm1DSTRB_mort <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + DSTRBCD1 + DSTRBCD2 + DSTRBCD3, data = ca_grm_table_grp)
+summary(lm1DSTRB_mort) # Adjusted R-squared: 0.2747 
+
+lmyr_mort <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD + YEAR + FORTYPCD + DSTRBCD1 + DSTRBCD2 + DSTRBCD3, data = ca_grm_table)
+summary(lmyr_mort) # Adjusted R-squared: 0.3101
+
+lmyr_mort2 <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD + YEAR + FORTYPCD + DSTRBCD1 + DSTRBCD2 + DSTRBCD3 + OWNGRPCD * DSTRBCD1, data = ca_grm_table)
+summary(lmyr_mort2) # Adjusted R-squared: 0.3276
+
+#interaction terms
+lmi_mort1 <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD * DSTRBCD1, data = ca_grm_table)
+summary(lmi_mort1) # Adjusted R-squared: 0.2655 
+
+lmi_mort2 <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD * FORTYPCD, data = ca_grm_table)
+summary(lmi_mort2) # Adjusted R-squared:  0.1107 
+
+lmi_mort1_2 <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD * DSTRBCD1 + OWNGRPCD * FORTYPCD + DSTRBCD2 + DSTRBCD3, data = ca_grm_table) 
+summary(lmi_mort1_2) # Adjusted R-squared: 0.3326
+
+lmi_mort3 <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD * TRTCD1, data = ca_grm_table)
+summary(lmi_mort3)
+```
+
+
+
+growth estimates
+```{r}
+lm1_grow <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD, data = ca_grm_table_grp)
+summary(lm1_grow) # Adjusted R-squared:  0.01448  
+
+lm2_grow <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD, data = ca_grm_table_grp)
+summary(lm2_grow) # Adjusted R-squared:  0.3749 
+
+lm3_grow <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1, data = ca_grm_table_grp)
+summary(lm3_grow) # Adjusted R-squared:  0.3752
+
+lm4_grow <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD, data = ca_grm_table_grp)
+summary(lm4_grow) # Adjusted R-squared:  0.4797
+
+lm5_grow <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD + PHYSCLCD, data = ca_grm_table_grp)
+summary(lm5_grow) # Adjusted R-squared:  0.4937
+
+lm6_grow <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD + PHYSCLCD + DSTRBCD1, data = ca_grm_table_grp)
+summary(lm6_grow) # Adjusted R-squared:  0.5063
+
+lm7_grow <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD + PHYSCLCD + DSTRBCD1 + YEAR, data = ca_grm_table_grp)
+summary(lm7_grow) # Adjusted R-squared:  0.5113
+
+lmDSTRB_grow <- lm(GROW_CARB_AG_ACRE ~ DSTRBCD1 + DSTRBCD2 + DSTRBCD3, data = ca_grm_table_grp)
+summary(lmDSTRB_grow) # Adjusted R-squared: 0.05833 
+
+# interacting terms
+lmi_grow1 <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD * FORTYPCD, data = ca_grm_table)
+summary(lmi_grow1) # Adjusted R-squared:  0.3821
+
+lmi_grow2 <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD * FORTYPCD + OWNGRPCD * SITECLCD, data = ca_grm_table)
+summary(lmi_grow2) # Adjusted R-squared:  0.4858 
+
+lmi_growsite <-  lm(GROW_CARB_AG_ACRE ~ OWNGRPCD * SITECLCD, data = ca_grm_table)
+summary(lmi_growsite) # Adjusted R-squared:  0.4007
+
+lmi_grow3 <-  lm(GROW_CARB_AG_ACRE ~ OWNGRPCD * TRTCD1, data = ca_grm_table)
+summary(lmi_grow3) # Adjusted R-squared:  0.02122
+
+lmi_grow4 <-  lm(GROW_CARB_AG_ACRE ~ OWNGRPCD * FORTYPCD + OWNGRPCD * SITECLCD + PHYSCLCD, data = ca_grm_table)
+summary(lmi_grow4) # Adjusted R-squared:  0.4986
+
+lmi_grow5 <- lm(GROW_CARB_AG_ACRE ~ OWNGRPCD * DSTRBCD1, data = ca_grm_table)
+summary(lmi_grow5) # Adjusted R-squared:  0.09258
+
+# analyze linear regressions
+
+result_grow <- AIC(lm3_grow, lm4_grow, lm5_grow, lm6_grow, lm7_grow)
+
+models_grow <- list(lm3_grow, lm4_grow, lm5_grow, lm6_grow, lm7_grow)
+result_grow$BIC <- sapply(models_grow, BIC) 
+model_summary_grow <- lapply(models_grow, summary)
+
+for(i in 1:length(models_grow)){ #this creates a variable i that starts with the value i=1
+  result_grow$rsq[i] <- model_summary_grow[[i]]$r.squared #we assign the rsq value from model i to the i'th row of the column 'rsq' in the table 'results'
+  result_grow$adj_rsq[i] <- model_summary_grow[[i]]$adj.r.squared #same for adjusted rsq
+} #now we go back to the beginning of the for-loop, add 1 to the value of i, and do everything again
+
+kable(result_grow, digits = 2, align = "c")
+
+
+```
+
+do private lands have less disturbance? (answer: yes)
+```{r}
+# prepare data
+  # copy data
+  test_ca_grm_table <- ca_grm_table
+ 
+ # flag if plot has insect damage
+  test_ca_grm_table$insect_damage <- ifelse(test_ca_grm_table$DSTRBCD1 %in% c(10, 11, 12), 1, 0)
+  
+  # flag if plot has disease 
+  test_ca_grm_table$disease <- ifelse(test_ca_grm_table$DSTRBCD1 %in% c(20, 21, 22), 1, 0)
+  
+  # flag if plot has fire 
+  test_ca_grm_table$fire <- ifelse(test_ca_grm_table$DSTRBCD1 %in% c(30, 31, 32), 1, 0)
+  
+  # flag if plot has drought
+  test_ca_grm_table$drought <- ifelse(test_ca_grm_table$DSTRBCD1 == 54, 1, 0)
+  
+  # flag if plot has no disturbance
+  test_ca_grm_table$none <- ifelse(test_ca_grm_table$DSTRBCD1 == 0, 1, 0)
+  
+  
+#calculate proportion of plots with disturbance by ownership
+  disturbance_rates <- test_ca_grm_table %>%
+    group_by(OWNGRPCD) %>%
+    summarize(
+      n = n(), # dount plots in ownership group
+      insect_rate = mean(insect_damage, na.rm = TRUE), # mean = proportion of plots with this kind of disturbance,
+      disease_rate = mean(disease, na.rm = TRUE),
+      fire_rate = mean(fire, na.rm = TRUE),
+      drought_rate = mean(drought, na.rm = TRUE),
+      none_rate = mean(none, na.rm = TRUE)
+    )
+
+# analyze
+disturbance_rates #view
+
+# export
+write.csv(disturbance_rates, file = "disturbance_rates_ownership_CA.csv")
+
+  # chi sq test
+    # insect
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$insect_damage)) # p-value = 0.0001722
+    fisher.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$insect_damage)) # p-value = 9.493e-05
+    
+    # disease
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$disease)) # p-value < 2.2e-16
+    
+    # fire
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$fire)) # p-value < 2.2e-16
+    
+    # drought
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$drought)) # p-value = 0.1483
+    
+    # none
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$none)) # p-value = 1.613e-08
+    
+```
+
+do private lands have different treatment codes?
+```{r}
+# prepare data
+  # # copy data (only if you did not run previous chunk abt disturbance)
+  # test_ca_grm_table <- ca_grm_table
+ 
+ # flag if plot has no treatment
+  test_ca_grm_table$no_treatment <- ifelse(test_ca_grm_table$TRTCD1 == 0, 1, 0)
+  
+  # flag if plot has cutting 
+  test_ca_grm_table$cut <- ifelse(test_ca_grm_table$TRTCD1 == 10, 1, 0)
+  
+   # flag if plot has other prep for regen (Clearing, slash burning, chopping, disking, bedding)
+  test_ca_grm_table$prep <- ifelse(test_ca_grm_table$TRTCD1 == 20, 1, 0)
+  
+  # flag if plot has artificial regen 
+  test_ca_grm_table$art_regen <- ifelse(test_ca_grm_table$TRTCD1 == 30, 1, 0)
+  
+  # flag if plot has natural regen
+  test_ca_grm_table$nat_regen <- ifelse(test_ca_grm_table$TRTCD1 == 40, 1, 0)
+  
+  # flag if plot has silviculture treatment (fertilizers, herbicides, girdling, pruning,)
+  test_ca_grm_table$silv <- ifelse(test_ca_grm_table$DSTRBCD1 == 50, 1, 0)
+  
+  
+#calculate proportion of plots with disturbance by ownership
+  treatment_rates <- test_ca_grm_table %>%
+    group_by(OWNGRPCD) %>%
+    summarize(
+      n = n(), # dount plots in ownership group
+      no_treatment_rate = mean(no_treatment, na.rm = TRUE), # mean = proportion of plots with this kind of disturbance,
+      cut_rate = mean(cut, na.rm = TRUE),
+      prep_rate = mean(prep, na.rm = TRUE),
+      art_regen_rate = mean(art_regen, na.rm = TRUE),
+      nat_regen_rate = mean(nat_regen, na.rm = TRUE),
+      silv_rate = mean(silv, na.rm = TRUE)
+    )
+
+# analyze
+treatment_rates #view
+
+  # chi sq test
+    # none
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$no_treatment)) # p-value < 2.2e-16
+    
+    # cutting
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$cut)) # p-value < 2.2e-16 
+    
+    # prep
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$prep)) # p-value = 0.764
+    
+    # art regen
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$art_regen)) # p-value = 0.2798
+    
+    # nat regen
+    chisq.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$nat_regen)) # p-value = 0.5924
+    
+    # silv
+    fisher.test(table(test_ca_grm_table$OWNGRPCD, test_ca_grm_table$silv)) # p-value = 2.608e-10
+    
+```
+
+## min travel time
+
+prep data
+```{r}
+# filter by CA
+ca_min_travel_time <- min_travel_time[min_travel_time$STATE == 'CA',] #this leaves some plots with FIPS code 41 (OR), even though STATE = CA
+ca_min_travel_time <- min_travel_time[min_travel_time$STATECD == '6',]
+
+# the last 5 digits of pltID in ca_grm_table are PLOT IDs from ca_min_travel time
+
+# make new column un ca_grm_with last 5 digits of pltID
+ca_grm_table1 <- ca_grm_table
+
+ca_grm_table1$PLOT_CD <- substring(ca_grm_table$pltID, nchar(ca_grm_table$pltID) - 4)
+
+# now pivot so that time to chips and merchantable facilities are separate columns
+ca_min_travel_time_clean <- ca_min_travel_time %>%
+  select(PLOT, BIOCD_DEF, ONE_WAY_HOURS) %>%
+  group_by(PLOT, BIOCD_DEF) %>%
+  # summarise(ONE_WAY_HOURS = min(ONE_WAY_HOURS), .groups = "drop") %>%
+  pivot_wider(
+    names_from = BIOCD_DEF,
+    values_from = ONE_WAY_HOURS,
+    names_prefix = "OWH_"
+  )
+
+# rename PLOT to match with ca_grm PLOT_CD
+names(ca_min_travel_time_clean)[names(ca_min_travel_time_clean) == "PLOT"] <- "PLOT_CD"
+
+# make PLOT_CD a character
+ca_min_travel_time_clean$PLOT_CD <- as.character(ca_min_travel_time_clean$PLOT_CD)
+
+# join with ca_grm
+ca_grm_travel <- ca_grm_table1 %>%
+  full_join(ca_min_travel_time_clean, by = 'PLOT_CD')
+
+```
+
+analyze
+```{r}
+# plot
+plot(OWH_Chips ~ GROW_CARB_AG_ACRE, data = ca_grm_travel)
+plot(OWH_Chips ~ REMV_CARB_AG_ACRE, data = ca_grm_travel)
+plot(OWH_Chips ~ MORT_CARB_AG_ACRE, data = ca_grm_travel)
+
+plot(OWH_Merchantable ~ GROW_CARB_AG_ACRE, data = ca_grm_travel)
+plot(OWH_Merchantable ~ REMV_CARB_AG_ACRE, data = ca_grm_travel)
+plot(OWH_Merchantable ~ MORT_CARB_AG_ACRE, data = ca_grm_travel)
+
+
+# removal
+lm1_remv_chips <- lm(REMV_CARB_AG_ACRE ~ OWH_Chips, data = ca_grm_travel)
+summary(lm1_remv_chips) # Adjusted R-squared:  0.009079
+
+lmt5_remv_chips <- lm(REMV_CARB_AG_ACRE ~ OWH_Chips + OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD, data = ca_grm_travel)
+summary(lmt5_remv_chips) # Adjusted R-squared:  0.2447
+
+lmt1_remv_merch <- lm(REMV_CARB_AG_ACRE ~ OWH_Merchantable, data = ca_grm_travel)
+summary(lmt1_remv_merch) # Adjusted R-squared:  0.007083
+
+
+lmt5_remv_merch <- lm(REMV_CARB_AG_ACRE ~ OWH_Merchantable + OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD, data = ca_grm_travel)
+summary(lmt5_remv_merch) # Adjusted R-squared:  0.2397
+
+
+```
+
+## carbon
+Carbon
+```{r}
+ca_cond <- ca_data$COND #cond table
+ca_plot <- ca_data$PLOT #plot table
+ca_tree <- ca_data$TREE #tree table
+
+# get carbon by plot
+carbon_plot<- carbon(ca_data, byPlot = TRUE)
+
+# join
+ca_table <- carbon_plot %>%
+  # Join tables
+  left_join(ca_cond, by = 'PLT_CN') # The foreign key for the COND table is PLT_CN. There is always a match of the PLT_CN value to the CN value in the PLOT table.
+
+# make variables factors
+ca_table$OWNGRPCD <- as.factor(ca_table$OWNGRPCD)
+ca_table$FORTYPCD <- as.factor(ca_table$FORTYPCD)
+ca_table$TRTCD1 <- as.factor(ca_table$TRTCD1)
+ca_table$SITECLCD <- as.factor(ca_table$SITECLCD)
+ca_table$PHYSCLCD <- as.factor(ca_table$PHYSCLCD)
+ca_table$RESERVCD <- as.factor(ca_table$RESERVCD)
+
+
+# carbon per acre estimates
+
+lm1 <- lm(CARB_ACRE ~ OWNGRPCD, data = ca_table)
+summary(lm1) # Adjusted R-squared:  0.0181 
+
+lm2 <- lm(CARB_ACRE ~ OWNGRPCD + FORTYPCD, data = ca_table)
+summary(lm2) # Adjusted R-squared:  0.1025 
+
+lm3 <- lm(CARB_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1, data = ca_table)
+summary(lm3) # Adjusted R-squared:  0.1028
+
+lm4 <- lm(CARB_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD, data = ca_table)
+summary(lm4) # Adjusted R-squared:  0.1152
+
+lm5 <- lm(CARB_ACRE ~ OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD + PHYSCLCD, data = ca_table)
+summary(lm5) # Adjusted R-squared:  0.1221
+
+```
+
+
+analyze linear regressions
+```{r}
+result <- AIC(lm1, lm2, lm3, lm4, lm5)
+
+models <- list(lm1, lm2, lm3, lm4, lm5)
+result$BIC <- sapply(models, BIC) 
+model_summary <- lapply(models, summary)
+
+for(i in 1:length(models)){ #this creates a variable i that starts with the value i=1
+  result$rsq[i] <- model_summary[[i]]$r.squared #we assign the rsq value from model i to the i'th row of the column 'rsq' in the table 'results'
+  result$adj_rsq[i] <- model_summary[[i]]$adj.r.squared #same for adjusted rsq
+} #now we go back to the beginning of the for-loop, add 1 to the value of i, and do everything again
+
+kable(result, digits = 2, align = "c")
+
+
+```
