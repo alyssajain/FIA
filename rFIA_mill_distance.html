@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<!-- saved from url=(0022)http://localhost:7467/ -->
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+
+<meta name="generator" content="quarto-1.6.42">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>rFIA_mill_distance</title>
+<style class="anchorjs"></style><style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="./rFIA_mill_distance_files/clipboard.min.js"></script>
+<script src="./rFIA_mill_distance_files/quarto.js"></script>
+<script src="./rFIA_mill_distance_files/popper.min.js"></script>
+<script src="./rFIA_mill_distance_files/tippy.umd.min.js"></script>
+<script src="./rFIA_mill_distance_files/anchor.min.js"></script>
+<link href="./rFIA_mill_distance_files/tippy.css" rel="stylesheet">
+<link href="./rFIA_mill_distance_files/quarto-syntax-highlighting-2f5df379a58b258e96c21c0638c20c03.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="./rFIA_mill_distance_files/bootstrap.min.js"></script>
+<link href="./rFIA_mill_distance_files/bootstrap-icons.css" rel="stylesheet">
+<link href="./rFIA_mill_distance_files/bootstrap-c0367b04c37547644fece4185067e4a7.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+<style>.ansi-display{font-family:monospace;white-space:pre-wrap;--ansiBlack: #000000;--ansiRed: #cd3131;--ansiGreen: #00BC00;--ansiYellow: #949800;--ansiBlue: #0451a5;--ansiMagenta: #bc05bc;--ansiCyan: #0598bc;--ansiWhite: #555555;--ansiBrightBlack: #666666;--ansiBrightRed: #cd3131;--ansiBrightGreen: #14CE14;--ansiBrightYellow: #b5ba00;--ansiBrightBlue: #0451a5;--ansiBrightMagenta: #bc05bc;--ansiBrightCyan: #0598bc;--ansiBrightWhite: #a5a5a5}.dark-mode .ansi-display{--ansiBlack: #000000;--ansiRed: #cd3131;--ansiGreen: #0DBC79;--ansiYellow: #e5e510;--ansiBlue: #2472c8;--ansiMagenta: #bc3fbc;--ansiCyan: #11a8cd;--ansiWhite: #e5e5e5;--ansiBrightBlack: #666666;--ansiBrightRed: #f14c4c;--ansiBrightGreen: #23d18b;--ansiBrightYellow: #f5f543;--ansiBrightBlue: #3b8eea;--ansiBrightMagenta: #d670d6;--ansiBrightCyan: #29b8db;--ansiBrightWhite: #e5e5e5}@keyframes ansi-displaly-run-blink{50%{opacity:0}}.fui-FluentProvider h2{border-bottom:none;padding-bottom:0}</style><style data-make-styles-bucket="d" data-priority="0"></style><style id="fui-FluentProviderr0"></style></head>
+
+<body class="fullcontent quarto-light" data-tabster="{&quot;root&quot;:{}}">
+
+<i tabindex="0" role="none" data-tabster-dummy="" aria-hidden="true" style="position: fixed; height: 1px; width: 1px; opacity: 0.001; z-index: -1; content-visibility: hidden; top: 0px; left: 0px;"></i><div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">rFIA_mill_distance</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="how-does-distance-to-mill-affect-fia-plot-characteristics" class="level2">
+<h2 class="anchored" data-anchor-id="how-does-distance-to-mill-affect-fia-plot-characteristics">How does distance to mill affect FIA plot characteristics?<a class="anchorjs-link " aria-label="Anchor" data-anchorjs-icon="" href="http://localhost:7467/#how-does-distance-to-mill-affect-fia-plot-characteristics" style="font: 1em / 1 anchorjs-icons; margin-left: 0.1875em; padding-right: 0.1875em; padding-left: 0.1875em;"></a></h2>
+<p><strong>Questions:</strong> We aim to answer the following questions:</p>
+<p><em>Q1) Does distance from the nearest mill affect the probability of fire?</em></p>
+<p><em>Q2) Does distance increase the probability of fire because there’s less management happening farther from mills?</em></p>
+<p><em>Q3) Does tree mortality increase as distance from mills increases?</em></p>
+<p><strong>Code Setup</strong></p>
+<p>FIA data and GRM</p>
+<p>Mill Travel Time</p>
+<div class="cell">
+<div class="cell-output cell-output-stderr">
+<pre><code>Rows: 64472 Columns: 25
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr (10): Region, NAME, TRANCD_DEF, BIOCD_DEF, EXISTS_YN, STATE, COUNTY, CIT...
+dbl (11): TRAVELTIME_ID, STATECD, PLOT, PSITE_ID, ONE_WAY_HOURS, PSITE_CN, T...
+lgl  (4): TRAVEL_MODE, RAILHEAD_ID, COLLECTOR_ID, NOTES
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
+</div>
+</div>
+<p>Fire Spatial Data</p>
+<p><strong>Findings:</strong></p>
+<p><em>Q1)</em> We ran a logistic regression to determine how distance from the nearest mill affects the probability of fire.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="http://localhost:7467/#cb2-1" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Merchantable</span></span>
+<span id="cb2-2"><a href="http://localhost:7467/#cb2-2" aria-hidden="true" tabindex="-1"></a>    q1M <span class="ot">&lt;-</span> <span class="fu">glm</span>(fire_intersect <span class="sc">~</span> OWH_Merchantable, <span class="at">data =</span> ca_grm_travel_fire, <span class="at">family =</span> <span class="st">"binomial"</span>)</span>
+<span id="cb2-3"><a href="http://localhost:7467/#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">summary</span>(q1M)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+glm(formula = fire_intersect ~ OWH_Merchantable, family = "binomial", 
+    data = ca_grm_travel_fire)
+
+Coefficients:
+                 Estimate Std. Error z value Pr(&gt;|z|)    
+(Intercept)      -0.39904    0.04306  -9.267  &lt; 2e-16 ***
+OWH_Merchantable  0.09028    0.02682   3.366 0.000762 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 11323  on 8279  degrees of freedom
+Residual deviance: 11312  on 8278  degrees of freedom
+  (1769 observations deleted due to missingness)
+AIC: 11316
+
+Number of Fisher Scoring iterations: 4</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="http://localhost:7467/#cb4-1" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Chips</span></span>
+<span id="cb4-2"><a href="http://localhost:7467/#cb4-2" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-3"><a href="http://localhost:7467/#cb4-3" aria-hidden="true" tabindex="-1"></a>    q1C <span class="ot">&lt;-</span> <span class="fu">glm</span>(fire_intersect <span class="sc">~</span> OWH_Chips, <span class="at">data =</span> ca_grm_travel_fire, <span class="at">family =</span> <span class="st">"binomial"</span>)</span>
+<span id="cb4-4"><a href="http://localhost:7467/#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">summary</span>(q1C)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+glm(formula = fire_intersect ~ OWH_Chips, family = "binomial", 
+    data = ca_grm_travel_fire)
+
+Coefficients:
+            Estimate Std. Error z value Pr(&gt;|z|)    
+(Intercept) -0.51643    0.04672 -11.054  &lt; 2e-16 ***
+OWH_Chips    0.15161    0.02457   6.171 6.79e-10 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 11623  on 8488  degrees of freedom
+Residual deviance: 11585  on 8487  degrees of freedom
+  (1560 observations deleted due to missingness)
+AIC: 11589
+
+Number of Fisher Scoring iterations: 4</code></pre>
+</div>
+</div>
+<p>Using the fire perimeter data to determine fire occurrence, we find that for every additional hour in distance to a merchantable mill, the log odds of fire increase by 0.09028 (p = 0.000762). Similarly, for every additional hour in distance to a chips mill, the log odds of fire increase by 0.15161 (p = 6.79e-10). These results indicate that plots farther away from mills are significantly more likely to experience fire.</p>
+<p><em>Q2)</em> To see if decreased management is the mechanism increasing probability of fire farther from mills, we ran a logistic regression to see how distance from mills affects probability of treatment (which mostly refers to cutting, as well as a little preparation for planting).</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="http://localhost:7467/#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Merchantable</span></span>
+<span id="cb6-2"><a href="http://localhost:7467/#cb6-2" aria-hidden="true" tabindex="-1"></a>  q2aM <span class="ot">&lt;-</span> <span class="fu">glm</span>(TRTCD_CUT_PREP <span class="sc">~</span> OWH_Merchantable, <span class="at">data =</span> ca_grm_travel_trtcd_grp, <span class="at">family =</span> <span class="st">"binomial"</span>)</span>
+<span id="cb6-3"><a href="http://localhost:7467/#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summary</span>(q2aM)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+glm(formula = TRTCD_CUT_PREP ~ OWH_Merchantable, family = "binomial", 
+    data = ca_grm_travel_trtcd_grp)
+
+Coefficients:
+                 Estimate Std. Error z value Pr(&gt;|z|)    
+(Intercept)      -1.95166    0.08466 -23.052   &lt;2e-16 ***
+OWH_Merchantable -0.56457    0.06606  -8.547   &lt;2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 4050.8  on 8279  degrees of freedom
+Residual deviance: 3966.3  on 8278  degrees of freedom
+  (1769 observations deleted due to missingness)
+AIC: 3970.3
+
+Number of Fisher Scoring iterations: 6</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="http://localhost:7467/#cb8-1" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Chips</span></span>
+<span id="cb8-2"><a href="http://localhost:7467/#cb8-2" aria-hidden="true" tabindex="-1"></a>  q2aC <span class="ot">&lt;-</span> <span class="fu">glm</span>(TRTCD_CUT_PREP <span class="sc">~</span> OWH_Chips, <span class="at">data =</span> ca_grm_travel_trtcd_grp, <span class="at">family =</span> <span class="st">"binomial"</span>)</span>
+<span id="cb8-3"><a href="http://localhost:7467/#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summary</span>(q2aC)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+glm(formula = TRTCD_CUT_PREP ~ OWH_Chips, family = "binomial", 
+    data = ca_grm_travel_trtcd_grp)
+
+Coefficients:
+            Estimate Std. Error z value Pr(&gt;|z|)    
+(Intercept) -1.76026    0.08941 -19.687   &lt;2e-16 ***
+OWH_Chips   -0.57778    0.05872  -9.839   &lt;2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 4211.4  on 8488  degrees of freedom
+Residual deviance: 4100.4  on 8487  degrees of freedom
+  (1560 observations deleted due to missingness)
+AIC: 4104.4
+
+Number of Fisher Scoring iterations: 6</code></pre>
+</div>
+</div>
+<p>The log odds of treatment decrease by 0.56457 and 0.57778 for merchantable and chip mills, respectively (p &lt;2e-16).&nbsp;</p>
+<p>We then ran a logistic regression to see if there is more fire when there is less management, controlling for distance.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="http://localhost:7467/#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Merchantable</span></span>
+<span id="cb10-2"><a href="http://localhost:7467/#cb10-2" aria-hidden="true" tabindex="-1"></a>  q2bM <span class="ot">&lt;-</span> <span class="fu">glm</span>(fire_intersect <span class="sc">~</span> OWH_Merchantable <span class="sc">+</span> TRTCD_CUT_PREP, <span class="at">data =</span> ca_grm_travel_trtcd_grp, <span class="at">family =</span> <span class="st">"binomial"</span>)</span>
+<span id="cb10-3"><a href="http://localhost:7467/#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summary</span>(q2bM)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+glm(formula = fire_intersect ~ OWH_Merchantable + TRTCD_CUT_PREP, 
+    family = "binomial", data = ca_grm_travel_trtcd_grp)
+
+Coefficients:
+                 Estimate Std. Error z value Pr(&gt;|z|)    
+(Intercept)      -0.37260    0.04405  -8.459  &lt; 2e-16 ***
+OWH_Merchantable  0.08316    0.02694   3.087  0.00202 ** 
+TRTCD_CUT_PREP   -0.25618    0.09166  -2.795  0.00519 ** 
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 11323  on 8279  degrees of freedom
+Residual deviance: 11304  on 8277  degrees of freedom
+  (1769 observations deleted due to missingness)
+AIC: 11310
+
+Number of Fisher Scoring iterations: 4</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="http://localhost:7467/#cb12-1" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Chips</span></span>
+<span id="cb12-2"><a href="http://localhost:7467/#cb12-2" aria-hidden="true" tabindex="-1"></a>  q2bC <span class="ot">&lt;-</span> <span class="fu">glm</span>(fire_intersect <span class="sc">~</span> OWH_Chips <span class="sc">+</span> TRTCD_CUT_PREP, <span class="at">data =</span> ca_grm_travel_trtcd_grp, <span class="at">family =</span> <span class="st">"binomial"</span>)</span>
+<span id="cb12-3"><a href="http://localhost:7467/#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summary</span>(q2bC) </span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+glm(formula = fire_intersect ~ OWH_Chips + TRTCD_CUT_PREP, family = "binomial", 
+    data = ca_grm_travel_trtcd_grp)
+
+Coefficients:
+               Estimate Std. Error z value Pr(&gt;|z|)    
+(Intercept)    -0.48749    0.04782 -10.195  &lt; 2e-16 ***
+OWH_Chips       0.14422    0.02471   5.837  5.3e-09 ***
+TRTCD_CUT_PREP -0.25067    0.08999  -2.786  0.00534 ** 
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 11623  on 8488  degrees of freedom
+Residual deviance: 11577  on 8486  degrees of freedom
+  (1560 observations deleted due to missingness)
+AIC: 11583
+
+Number of Fisher Scoring iterations: 4</code></pre>
+</div>
+</div>
+<p>For merchantable mills, the log odds of fire decrease by 0.25618 when there is treatment, compared to plots without treatment (p = 0.00519). Further, for every additional hour in distance to a merchantable mill, the log odds of fire increase by 0.08316 (p = 0.00202). This is down from 0.09028 when treatment is not considered, which means that treatment mediates the effect of distance on fire.</p>
+<p>A causal mediation analysis reveals that 13% of the effect of distance from merchantable mills on the probability of fire is explained by reduced management (p = 0.01). We found a similar trend for Chip mills: the log odds of fire decrease by 0.25067 when there is treatment compared to no treatment (p = 0.00534). For every additional hour in distance to a chip mill, the log odds of fire increase by 0.14422 (p = 5.3e-09). This is down from 0.1516 when treatment is not considered, meaning that treatment mediates the effect of distance on fire. A causal mediation analysis reveals that reduced management explains 8.9% of the effect of distance from merchantable mills on the probability of fire (p= 0.002).</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="http://localhost:7467/#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Mediation analysis: does management effect on fire interact with mill distance?</span></span>
+<span id="cb14-2"><a href="http://localhost:7467/#cb14-2" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb14-3"><a href="http://localhost:7467/#cb14-3" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Merchantable</span></span>
+<span id="cb14-4"><a href="http://localhost:7467/#cb14-4" aria-hidden="true" tabindex="-1"></a>  med_outM <span class="ot">&lt;-</span> <span class="fu">mediate</span>(q2aM, q2bM,</span>
+<span id="cb14-5"><a href="http://localhost:7467/#cb14-5" aria-hidden="true" tabindex="-1"></a>                     <span class="at">treat =</span> <span class="st">"OWH_Merchantable"</span>,</span>
+<span id="cb14-6"><a href="http://localhost:7467/#cb14-6" aria-hidden="true" tabindex="-1"></a>                     <span class="at">mediator =</span> <span class="st">"TRTCD_CUT_PREP"</span>,</span>
+<span id="cb14-7"><a href="http://localhost:7467/#cb14-7" aria-hidden="true" tabindex="-1"></a>                     <span class="at">boot =</span> <span class="cn">TRUE</span>, <span class="at">sims =</span> <span class="dv">1000</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Running nonparametric bootstrap</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="http://localhost:7467/#cb16-1" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summary</span>(med_outM)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Causal Mediation Analysis 
+
+Nonparametric Bootstrap Confidence Intervals with the Percentile Method
+
+                         Estimate 95% CI Lower 95% CI Upper p-value    
+ACME (control)           0.003289     0.000922         0.01   0.010 ** 
+ACME (treated)           0.003352     0.000944         0.01   0.010 ** 
+ADE (control)            0.020084     0.007145         0.03   0.002 ** 
+ADE (treated)            0.020146     0.007170         0.03   0.002 ** 
+Total Effect             0.023435     0.010007         0.04  &lt;2e-16 ***
+Prop. Mediated (control) 0.140366     0.034599         0.33   0.010 ** 
+Prop. Mediated (treated) 0.143014     0.035844         0.33   0.010 ** 
+ACME (average)           0.003321     0.000934         0.01   0.010 ** 
+ADE (average)            0.020115     0.007157         0.03   0.002 ** 
+Prop. Mediated (average) 0.141690     0.035144         0.33   0.010 ** 
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Sample Size Used: 8280 
+
+
+Simulations: 1000 </code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="http://localhost:7467/#cb18-1" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Chips</span></span>
+<span id="cb18-2"><a href="http://localhost:7467/#cb18-2" aria-hidden="true" tabindex="-1"></a>  med_outC <span class="ot">&lt;-</span> <span class="fu">mediate</span>(q2aC, q2bC,</span>
+<span id="cb18-3"><a href="http://localhost:7467/#cb18-3" aria-hidden="true" tabindex="-1"></a>                     <span class="at">treat =</span> <span class="st">"OWH_Chips"</span>,</span>
+<span id="cb18-4"><a href="http://localhost:7467/#cb18-4" aria-hidden="true" tabindex="-1"></a>                     <span class="at">mediator =</span> <span class="st">"TRTCD_CUT_PREP"</span>,</span>
+<span id="cb18-5"><a href="http://localhost:7467/#cb18-5" aria-hidden="true" tabindex="-1"></a>                     <span class="at">boot =</span> <span class="cn">TRUE</span>, <span class="at">sims =</span> <span class="dv">1000</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Running nonparametric bootstrap</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="http://localhost:7467/#cb20-1" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summary</span>(med_outC)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Causal Mediation Analysis 
+
+Nonparametric Bootstrap Confidence Intervals with the Percentile Method
+
+                         Estimate 95% CI Lower 95% CI Upper p-value    
+ACME (control)            0.00312      0.00108         0.01   0.006 ** 
+ACME (treated)            0.00324      0.00112         0.01   0.006 ** 
+ADE (control)             0.03421      0.02359         0.05  &lt;2e-16 ***
+ADE (treated)             0.03433      0.02366         0.05  &lt;2e-16 ***
+Total Effect              0.03745      0.02697         0.05  &lt;2e-16 ***
+Prop. Mediated (control)  0.08331      0.02691         0.18   0.006 ** 
+Prop. Mediated (treated)  0.08653      0.02803         0.18   0.006 ** 
+ACME (average)            0.00318      0.00110         0.01   0.006 ** 
+ADE (average)             0.03427      0.02363         0.05  &lt;2e-16 ***
+Prop. Mediated (average)  0.08492      0.02747         0.18   0.006 ** 
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Sample Size Used: 8489 
+
+
+Simulations: 1000 </code></pre>
+</div>
+</div>
+<p><em>Q3)</em> To determine if tree mortality increases with distance from mills, we ran a linear regression using mortality carbon per acre to represent mortality. For every additional hour in distance to a chip mill, the mortality carbon per acre increased by 80.28 tons (p = 0.00124). However, we found no significant effect on distance from merchantable mills (p = 0.0804). These results demonstrate that tree mortality significantly increases with distance to chip mills.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="http://localhost:7467/#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Merchantable</span></span>
+<span id="cb22-2"><a href="http://localhost:7467/#cb22-2" aria-hidden="true" tabindex="-1"></a>q3aM <span class="ot">&lt;-</span> <span class="fu">lm</span>(MORT_CARB_AG_ACRE <span class="sc">~</span> OWH_Merchantable, <span class="at">data =</span> ca_grm_travel_trtcd_grp)</span>
+<span id="cb22-3"><a href="http://localhost:7467/#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(q3aM)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+lm(formula = MORT_CARB_AG_ACRE ~ OWH_Merchantable, data = ca_grm_travel_trtcd_grp)
+
+Residuals:
+    Min      1Q  Median      3Q     Max 
+ -884.9  -705.0  -638.9  -103.9 27631.2 
+
+Coefficients:
+                 Estimate Std. Error t value Pr(&gt;|t|)    
+(Intercept)        646.58      43.21  14.962   &lt;2e-16 ***
+OWH_Merchantable    47.69      27.28   1.748   0.0804 .  
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Residual standard error: 1856 on 7074 degrees of freedom
+  (2973 observations deleted due to missingness)
+Multiple R-squared:  0.000432,  Adjusted R-squared:  0.0002907 
+F-statistic: 3.057 on 1 and 7074 DF,  p-value: 0.08043</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="http://localhost:7467/#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Chips</span></span>
+<span id="cb24-2"><a href="http://localhost:7467/#cb24-2" aria-hidden="true" tabindex="-1"></a>q3aC <span class="ot">&lt;-</span> <span class="fu">lm</span>(MORT_CARB_AG_ACRE <span class="sc">~</span> OWH_Chips, <span class="at">data =</span> ca_grm_travel_trtcd_grp)</span>
+<span id="cb24-3"><a href="http://localhost:7467/#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(q3aC)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+lm(formula = MORT_CARB_AG_ACRE ~ OWH_Chips, data = ca_grm_travel_trtcd_grp)
+
+Residuals:
+    Min      1Q  Median      3Q     Max 
+ -988.0  -710.4  -619.2   -95.9 26492.7 
+
+Coefficients:
+            Estimate Std. Error t value Pr(&gt;|t|)    
+(Intercept)   589.90      46.60   12.66  &lt; 2e-16 ***
+OWH_Chips      80.28      24.85    3.23  0.00124 ** 
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Residual standard error: 1850 on 7247 degrees of freedom
+  (2800 observations deleted due to missingness)
+Multiple R-squared:  0.001438,  Adjusted R-squared:  0.0013 
+F-statistic: 10.43 on 1 and 7247 DF,  p-value: 0.001243</code></pre>
+</div>
+</div>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const onCopySuccess = function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  }
+  const getTextToCopy = function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+    text: getTextToCopy
+  });
+  clipboard.on('success', onCopySuccess);
+  if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+    const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+      text: getTextToCopy,
+      container: window.document.getElementById('quarto-embedded-source-code-modal')
+    });
+    clipboardModal.on('success', onCopySuccess);
+  }
+    var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+    var mailtoRegex = new RegExp(/^mailto:/);
+      var filterRegex = new RegExp('/' + window.location.host + '/');
+    var isInternal = (href) => {
+        return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+    }
+    // Inspect non-navigation links and adorn them if external
+ 	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+    for (var i=0; i<links.length; i++) {
+      const link = links[i];
+      if (!isInternal(link.href)) {
+        // undo the damage that might have been done by quarto-nav.js in the case of
+        // links that we want to consider external
+        if (link.dataset.originalHref !== undefined) {
+          link.href = link.dataset.originalHref;
+        }
+      }
+    }
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      if (note) {
+        return note.innerHTML;
+      } else {
+        return "";
+      }
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      if (note.classList.contains("callout")) {
+        return note.outerHTML;
+      } else {
+        return note.innerHTML;
+      }
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+
+<script>window.backupDefine = window.define; window.define = undefined;</script>
+<script type="text/javascript" src="./rFIA_mill_distance_files/quarto-preview.js"></script>
+<script>window.define = window.backupDefine; window.backupDefine = undefined;</script>
+<script type="text/javascript">
+  const options = {
+    origin: "",
+    search: "",
+    inputFile: "/Users/alyssajain/FIA/rFIA_mills.qmd",
+    isPresentation: false
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    window.QuartoPreview.init(options);
+  });
+</script>
+<div><div dir="ltr" class="fui-FluentProvider fui-FluentProviderr0 ___jdtuxv0 f19n0e5 fxugw4r f1o700av fk6fouc fkhj508 figsok6 f1i3iumi"></div></div><i tabindex="0" role="none" data-tabster-dummy="" aria-hidden="true" style="position: fixed; height: 1px; width: 1px; opacity: 0.001; z-index: -1; content-visibility: hidden; top: 0px; left: 0px;"></i></body></html>

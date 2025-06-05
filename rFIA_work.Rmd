@@ -17,6 +17,8 @@ library(tidyr)
 library(stringr)
 library(readr)
 library(sf)
+library(multcomp)
+library(mediation)
 ```
 
 load data
@@ -919,7 +921,7 @@ ca_grm_table1$PLOT_CD <- substring(ca_grm_table$pltID, nchar(ca_grm_table$pltID)
 
 # now pivot so that time to chips and merchantable facilities are separate columns
 ca_min_travel_time_clean <- ca_min_travel_time %>%
-  select(PLOT, BIOCD_DEF, ONE_WAY_HOURS) %>%
+  dplyr::select(PLOT, BIOCD_DEF, ONE_WAY_HOURS) %>%
   group_by(PLOT, BIOCD_DEF) %>%
   # summarise(ONE_WAY_HOURS = min(ONE_WAY_HOURS), .groups = "drop") %>%
   pivot_wider(
@@ -940,9 +942,72 @@ ca_grm_travel <- ca_grm_table1 %>%
 
 ```
 
+## fire spatial data
+```{r}
+# read in spatial fire perimeters
+fire_per <- read_sf("/Volumes/Alyssa_Backup/InterAgencyFirePerimeterHistory_All_Years_View/InterAgencyFirePerimeterHistory_All_Years_View.shp")
+
+# read in ca boundaries
+ca <- read_sf("/Volumes/Alyssa_Backup/tl_2022_06_tract/tl_2022_06_tract.shp")
+#plot(ca)
+
+# Convert FIA plot data to an sf object 
+  # first remove NAs
+  ca_plot_clean <- ca_plot %>%
+  filter(!is.na(LON) & !is.na(LAT))
+  
+  #then use coords to convert to sf
+  fia_sf <- st_as_sf(ca_plot_clean, coords = c("LON", "LAT"), crs = 4326)
+  
+# match crs
+  fire_per <- st_transform(fire_per, st_crs(fia_sf))
+  
+# This returns a list: one element per plot, containing indices of intersecting fire polygons
+intersections <- st_intersects(fia_sf, fire_per, sparse = TRUE)
+
+# Check if each plot has any intersections (i.e., non-empty list element)
+fia_sf$fire_intersect <- lengths(intersections) > 0
+
+# Convert to 1/0 instead of TRUE/FALSE 
+fia_sf$fire_intersect <- as.integer(fia_sf$fire_intersect)
+
+# now we will join to ca_grm_travel
+
+  # First extract just the plot ID and fire_intersect column from the sf object
+  fire_flag_df <- fia_sf %>%
+  sf::st_drop_geometry() %>%
+  dplyr::select(PLOT, fire_intersect) 
+  
+  # rename PLOT to match with ca_grm PLOT_CD
+  names(fire_flag_df)[names(fire_flag_df) == "PLOT"] <- "PLOT_CD"
+
+  # make PLOT_CD a character
+  fire_flag_df$PLOT_CD <- as.character(fire_flag_df$PLOT_CD)
+  
+  # make sure each plot appears only once
+  fire_flag_unique <- fire_flag_df %>%
+  group_by(PLOT_CD) %>%
+  summarise(fire_intersect = max(fire_intersect, na.rm = TRUE), .groups = "drop")
+  
+  # now join
+  ca_grm_travel_fire <- ca_grm_travel %>%
+  dplyr::left_join(fire_flag_unique, by = "PLOT_CD")
+  
+  # make fire_intersect a factor
+  ca_grm_travel_fire$fire_intersect <- as.factor(ca_grm_travel_fire$fire_intersect)
+
+############ this code fails due to memory limit
+# # if fia plot coords intersect with fire polygons, 1; else 0
+# fia_with_fire <- fia_sf %>%
+#   mutate(fire_intersect = as.integer(rowSums(st_intersects(., fire_per, sparse = FALSE)) > 0))
+############
+
+
+```
+
 analyze
 ```{r}
-# plot
+# plot GRM
 plot(OWH_Chips ~ GROW_CARB_AG_ACRE, data = ca_grm_travel)
 plot(OWH_Chips ~ REMV_CARB_AG_ACRE, data = ca_grm_travel)
 plot(OWH_Chips ~ MORT_CARB_AG_ACRE, data = ca_grm_travel)
@@ -950,6 +1015,128 @@ plot(OWH_Chips ~ MORT_CARB_AG_ACRE, data = ca_grm_travel)
 plot(OWH_Merchantable ~ GROW_CARB_AG_ACRE, data = ca_grm_travel)
 plot(OWH_Merchantable ~ REMV_CARB_AG_ACRE, data = ca_grm_travel)
 plot(OWH_Merchantable ~ MORT_CARB_AG_ACRE, data = ca_grm_travel)
+
+# plot basal area of live trees
+plot(OWH_Chips ~ BALIVE, data = ca_grm_travel)
+plot(OWH_Merchantable ~ BALIVE, data = ca_grm_travel)
+
+# plot growing stock stocking rate
+plot(OWH_Chips ~ GSSTK, data = ca_grm_travel)
+plot(OWH_Merchantable ~ GSSTK, data = ca_grm_travel)
+
+# plot CARBON_DOWN_DEAD
+plot(CARBON_DOWN_DEAD ~ OWH_Chips, data = ca_grm_travel)
+plot(CARBON_DOWN_DEAD ~ OWH_Merchantable, data = ca_grm_travel)
+
+# plot Disturbance
+  # # aggregate disturbance codes
+ca_grm_travel_grp <- ca_grm_travel %>%
+  mutate(
+    DSTRBCD1 = case_when(
+      DSTRBCD1 %in% 10:12 ~ "Insect",
+      DSTRBCD1 %in% 20:22 ~ "Disease",
+      DSTRBCD1 %in% 30:32 ~ "Fire",
+      DSTRBCD1 %in% 40:46 ~ "Animal",
+      DSTRBCD1 %in% 50:54 ~ "Weather",
+      DSTRBCD1 == 60:62 ~ "Vegetation",
+      DSTRBCD1 == 70:79 ~ "Unknown",
+      DSTRBCD1 == 80    ~ "Human",
+      DSTRBCD1 %in% 90:95 ~ "Geologic",
+      TRUE                        ~ "Other"
+    )
+  )
+  # chips
+    plot(OWH_Chips ~ DSTRBCD1, data = ca_grm_travel)
+    # anova
+        res_aov <- aov(OWH_Chips ~ DSTRBCD1,
+        data = ca_grm_travel
+      )
+      
+        summary(res_aov) # p = 6.57e-10
+        
+        # dunnett's
+        post_test <- glht(res_aov,
+      linfct = mcp(DSTRBCD1 = "Dunnett")
+    )
+    
+    summary(post_test) # for fire p = 0.00865
+    
+  # merch
+    plot(OWH_Merchantable ~ DSTRBCD1, data = ca_grm_travel)
+    # anova
+        res_aov <- aov(OWH_Merchantable ~ DSTRBCD1,
+        data = ca_grm_travel
+      )
+      
+        summary(res_aov) # p = 1.85e-13
+        
+        # dunnett's
+        post_test <- glht(res_aov,
+      linfct = mcp(DSTRBCD1 = "Dunnett")
+    )
+    
+    summary(post_test) # for fire p = 0.02753
+
+
+# plot spatial fire
+  # chips
+   boxplot(OWH_Chips ~ fire_intersect, data = ca_grm_travel_fire)
+    # anova
+        res_aov <- aov(OWH_Chips ~ fire_intersect,
+        data = ca_grm_travel_fire
+      )
+      
+        summary(res_aov) # p = 5.88e-10
+    # means
+    ca_grm_travel_fire %>%
+    group_by(fire_intersect) %>%
+    summarise(mean_OWH_Chips = mean(OWH_Chips, na.rm = TRUE),
+              n = n()) # no fire =	1.613747 hours; fire = 	1.734607 hours	
+    
+  # merch
+    boxplot(OWH_Merchantable ~ fire_intersect, data = ca_grm_travel_fire)
+    # anova
+        res_aov <- aov(OWH_Merchantable ~ fire_intersect,
+        data = ca_grm_travel_fire
+      )
+      
+        summary(res_aov) # p = 0.000751
+  
+      
+
+# plot treatment
+  # chips
+    plot(OWH_Chips ~ TRTCD1, data = ca_grm_travel)
+      # anova
+        res_aov <- aov(OWH_Chips ~ TRTCD1,
+        data = ca_grm_travel
+      )
+      
+        summary(res_aov) # p<2e-16
+        
+        # dunnett's
+        post_test <- glht(res_aov,
+      linfct = mcp(TRTCD1 = "Dunnett")
+    )
+    
+        summary(post_test) # for cutting p <1e-06 
+    
+  # merch
+    plot(OWH_Merchantable ~ TRTCD1, data = ca_grm_travel)
+  # anova
+    res_aov <- aov(OWH_Merchantable ~ TRTCD1,
+    data = ca_grm_travel
+  )
+  
+    summary(res_aov) # p<2e-16
+    
+    # dunnett's
+    post_test <- glht(res_aov,
+  linfct = mcp(TRTCD1 = "Dunnett")
+)
+
+    summary(post_test) # for cutting p <1e-06 
+
 
 
 # removal
@@ -966,8 +1153,170 @@ summary(lmt1_remv_merch) # Adjusted R-squared:  0.007083
 lmt5_remv_merch <- lm(REMV_CARB_AG_ACRE ~ OWH_Merchantable + OWNGRPCD + FORTYPCD + TRTCD1 + SITECLCD, data = ca_grm_travel)
 summary(lmt5_remv_merch) # Adjusted R-squared:  0.2397
 
+lmtest <- lm(CARBON_DOWN_DEAD ~ OWH_Chips + OWNGRPCD, data = ca_grm_travel)
+summary(lmtest)
+
+lmtest <- lm(fire_intersect ~ OWH_Chips, data = ca_grm_travel_fire)
+
 
 ```
+# statistical tests for mill distance write-up
+Q1) Does distance from the nearest mill affect the probability of fire?
+```{r}
+# Fire Perimeters
+
+  # Merchantable
+    q1M <- glm(fire_intersect ~ OWH_Merchantable, data = ca_grm_travel_fire, family = "binomial")
+    summary(q1M)
+      # for every additional hour in distance to a Merchantable mill, the log odds of fire increase by 0.09028 (P = 0.000762)
+    
+    
+  # Chips
+    
+    q1C <- glm(fire_intersect ~ OWH_Chips, data = ca_grm_travel_fire, family = "binomial")
+    summary(q1C)
+      # for every additional hour in distance to a Chips mill, the log odds of fire increase by 0.15161 (P = 6.79e-10)
+    
+#DSTRBCD
+  # first duplicate the data so we don't mess it up
+  ca_grm_travel_fiaFire <- ca_grm_travel_fire
+    
+  # clean data so fire is a binary variable
+  ca_grm_travel_fiaFire_grp <- ca_grm_travel_fiaFire %>%
+  mutate(
+    DSTRBCD_FIRE = if_else(
+      as.numeric(as.character(DSTRBCD1)) %in% 30:32 |
+      as.numeric(as.character(DSTRBCD2)) %in% 30:32 |
+      as.numeric(as.character(DSTRBCD3)) %in% 30:32,
+      1, 0
+    )
+  )
+  
+  # now we can analyze
+  
+    # Merchantable
+      q1Mfia <- glm(DSTRBCD_FIRE ~ OWH_Merchantable, data = ca_grm_travel_fiaFire_grp, family = "binomial")
+      summary(q1Mfia)
+        # for every additional hour in distance to a Merchantable mill, the log odds of fire increase by 0.18472 (P = 4.46e-05)
+          # why is this twice the fire perimeter one? 
+      
+      
+    # Chips
+      
+      q1Cfia <- glm(DSTRBCD_FIRE ~ OWH_Chips, data = ca_grm_travel_fiaFire_grp, family = "binomial")
+      summary(q1Cfia)
+        # for every additional hour in distance to a Chips mill, the log odds of fire increase by 0.20745 (P = 5.46e-07)
+  
+  
+  
+  
+```
+Q2) Does distance increase the probability of fire because there’s less management happening farther from mills (TRTCD1, Removals)
+```{r}
+# clean data for TRTCD = 10 (cutting) or 20 (Site preparation - Clearing, slash burning, chopping, disking, bedding, or other practices clearly intended to prepare a site for either natural or artificial regeneration.)
+  ca_grm_travel_trtcd_grp <- ca_grm_travel_fiaFire %>%
+  mutate(
+    TRTCD_CUT_PREP = if_else(
+      as.numeric(as.character(TRTCD1)) %in% 10:20 |
+      as.numeric(as.character(TRTCD2)) %in% 10:20 |
+      as.numeric(as.character(TRTCD3)) %in% 10:20,
+      1, 0
+    )
+  )
+
+# do the same for the fire dataset so we can analyze trtmnt and fire together: clean data for TRTCD = 10 (cutting) or 20 (Site preparation - Clearing, slash burning, chopping, disking, bedding, or other practices clearly intended to prepare a site for either natural or artificial regeneration.)
+  ca_grm_travel_trtcd_grp <- ca_grm_travel_fiaFire_grp %>%
+  mutate(
+    TRTCD_CUT_PREP = if_else(
+      as.numeric(as.character(TRTCD1)) %in% 10:20 |
+      as.numeric(as.character(TRTCD2)) %in% 10:20 |
+      as.numeric(as.character(TRTCD3)) %in% 10:20,
+      1, 0
+    )
+  )
+
+# is there less management farther from mills?
+  
+  # Merchantable
+  q2aM <- glm(TRTCD_CUT_PREP ~ OWH_Merchantable, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2aM)
+    # for every additional hour in distance to a Merchantable mill, the log odds of treatment decrease by 0.56457 (P <2e-16)
+  
+  # Chips
+  q2aC <- glm(TRTCD_CUT_PREP ~ OWH_Chips, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2aC)
+    # for every additional hour in distance to a Chip mill, the log odds of treatment decrease by 0.57778 (P <2e-16)
+
+# is there more fire when there is less management, controlling for distance?
+
+  # Merchantable
+  q2bM <- glm(fire_intersect ~ OWH_Merchantable + TRTCD_CUT_PREP, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2bM)
+    # for every additional hour in distance to a Merchantable mill, the log odds of fire increase by 0.08316 (P = 0.00202). This is down from 0.09028 when treatment is not considered, which means that treatment mediates the effect of distance on fire. The log odds of fire decrease by 0.25618 if there is treatment vs no treatment (p = 0.00519) 
+  
+  # Chips
+  q2bC <- glm(fire_intersect ~ OWH_Chips + TRTCD_CUT_PREP, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2bC)
+    # for every additional hour in distance to a Chip mill, the log odds of fire increase by 0.14422 (P = 5.3e-09). This is down from 0.1516 when treatment is not considered, meaning that treatment mediates the effect of distance on fire. The log odds of fire decrease by 0.25067 if there is treatment (p = 0.00534). 
+  
+  
+# Mediation analysis: does management effect on fire interact with mill distance?
+  
+  # Merchantable
+  med_outM <- mediate(q2aM, q2bM,
+                     treat = "OWH_Merchantable",
+                     mediator = "TRTCD_CUT_PREP",
+                     boot = TRUE, sims = 1000)
+  
+  summary(med_outM)
+    # Prop. Mediated (average) 0.132741 (P = 0.01), so 13% of the effect of distance from merchantable mill on fire is explained by reduced management
+  
+  #Chips
+  med_outC <- mediate(q2aC, q2bC,
+                     treat = "OWH_Chips",
+                     mediator = "TRTCD_CUT_PREP",
+                     boot = TRUE, sims = 1000)
+  
+  summary(med_outC)
+    # Prop. Mediated (average) 0.08860 (P = 0.002), so 8.9% of the effect of distance from chip mill on fire is explained by reduced management
+  
+```
+
+Q3) Does tree mortality increase as distance from mills increases?
+```{r}
+# Merchantable
+q3aM <- lm(MORT_CARB_AG_ACRE ~ OWH_Merchantable, data = ca_grm_travel_fire)
+summary(q3aM)
+
+#Chips
+q3aC <- lm(MORT_CARB_AG_ACRE ~ OWH_Chips, data = ca_grm_travel_fire)
+summary(q3aC)
+```
+
+Q4) Does removal decrease with distance from mill?
+```{r}
+#Merchantable
+q3bM <- lm(REMV_CARB_AG_ACRE ~ OWH_Merchantable, data = ca_grm_travel_fire)
+summary(q3bM)
+  # coefficient = -153.92, p = 8e-13 
+
+#Chips
+q3bC <- lm(REMV_CARB_AG_ACRE ~ OWH_Chips, data = ca_grm_travel_fire)
+summary(q3bC)
+  # coefficient = -164.52, p = 2.59e-16 
+
+```
+Q4: Does more carbon removed increase probability of fire?
+```{r}
+q4a <- glm(fire_intersect ~ REMV_CARB_AG_ACRE, data = ca_grm_travel_trtcd_grp, family = "binomial")
+summary(q4a)
+  # coefficient = -3.206e-05, p-value = 0.0473
+
+```
+#######################
+#######################
+
+
 
 ## carbon
 Carbon

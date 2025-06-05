@@ -1,0 +1,258 @@
+---
+title: "rFIA_mill_distance"
+author: "Alyssa N Jain"
+date: "6/1/2025"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+#| echo: false
+library(rFIA)
+library(ggplot2)
+library(dplyr)
+library(stats)
+library(knitr)
+library(tidyverse)
+library(tidyr)
+library(stringr)
+library(readr)
+library(sf)
+library(multcomp)
+library(mediation)
+```
+
+## How does distance to mill affect FIA plot characteristics?
+
+**Questions:** We aim to answer the following questions:
+
+*Q1) Does distance from the nearest mill affect the probability of fire?*
+
+*Q2) Does distance increase the probability of fire because there’s less management happening farther from mills?*
+
+*Q3) Does tree mortality increase as distance from mills increases?*
+
+**Code Setup**
+
+FIA data and GRM
+
+```{r}
+#| echo: false
+# read in FIA data
+ca_data <- readFIA("/Volumes/Alyssa_Backup/CA_CSV") 
+
+ca_cond <- ca_data$COND #cond table
+ca_plot <- ca_data$PLOT #plot table
+ca_tree <- ca_data$TREE #tree table
+
+# get grm by plot
+grm_plot <- growMort(ca_data, byPlot = TRUE, stateVar = "CARB_AG")
+
+# join
+ca_grm_table <- grm_plot %>%
+  # Join tables
+  left_join(ca_cond, by = 'PLT_CN') # The foreign key for the COND table is PLT_CN. There is always a match of the PLT_CN value to the CN value in the PLOT table.
+
+# make variables factors
+ca_grm_table$OWNGRPCD <- as.factor(ca_grm_table$OWNGRPCD)
+ca_grm_table$FORTYPCD <- as.factor(ca_grm_table$FORTYPCD)
+ca_grm_table$TRTCD1 <- as.factor(ca_grm_table$TRTCD1)
+ca_grm_table$SITECLCD <- as.factor(ca_grm_table$SITECLCD)
+ca_grm_table$PHYSCLCD <- as.factor(ca_grm_table$PHYSCLCD)
+ca_grm_table$RESERVCD <- as.factor(ca_grm_table$RESERVCD)
+ca_grm_table$YEAR <- as.factor(ca_grm_table$YEAR)
+ca_grm_table$DSTRBCD1 <- as.factor(ca_grm_table$DSTRBCD1)
+ca_grm_table$DSTRBCD2 <- as.factor(ca_grm_table$DSTRBCD2)
+ca_grm_table$DSTRBCD3 <- as.factor(ca_grm_table$DSTRBCD3)
+```
+
+Mill Travel Time
+
+```{r}
+#| echo: false
+# read in mill travel time data
+min_travel_time <- read_csv("min_travel_time.csv")
+
+# filter by CA
+ca_min_travel_time <- min_travel_time[min_travel_time$STATE == 'CA',] #this leaves some plots with FIPS code 41 (OR), even though STATE = CA
+ca_min_travel_time <- min_travel_time[min_travel_time$STATECD == '6',]
+
+# the last 5 digits of pltID in ca_grm_table are PLOT IDs from ca_min_travel time
+
+# make new column un ca_grm_with last 5 digits of pltID
+ca_grm_table1 <- ca_grm_table
+
+ca_grm_table1$PLOT_CD <- substring(ca_grm_table$pltID, nchar(ca_grm_table$pltID) - 4)
+
+# now pivot so that time to chips and merchantable facilities are separate columns
+ca_min_travel_time_clean <- ca_min_travel_time %>%
+  dplyr::select(PLOT, BIOCD_DEF, ONE_WAY_HOURS) %>%
+  group_by(PLOT, BIOCD_DEF) %>%
+  # summarise(ONE_WAY_HOURS = min(ONE_WAY_HOURS), .groups = "drop") %>%
+  pivot_wider(
+    names_from = BIOCD_DEF,
+    values_from = ONE_WAY_HOURS,
+    names_prefix = "OWH_"
+  )
+
+# rename PLOT to match with ca_grm PLOT_CD
+names(ca_min_travel_time_clean)[names(ca_min_travel_time_clean) == "PLOT"] <- "PLOT_CD"
+
+# make PLOT_CD a character
+ca_min_travel_time_clean$PLOT_CD <- as.character(ca_min_travel_time_clean$PLOT_CD)
+
+# join with ca_grm
+ca_grm_travel <- ca_grm_table1 %>%
+  full_join(ca_min_travel_time_clean, by = 'PLOT_CD')
+```
+
+Fire Spatial Data
+
+```{r}
+#| echo: false
+ # read in spatial fire perimeters
+fire_per <- read_sf("/Volumes/Alyssa_Backup/InterAgencyFirePerimeterHistory_All_Years_View/InterAgencyFirePerimeterHistory_All_Years_View.shp")
+
+# read in ca boundaries
+ca <- read_sf("/Volumes/Alyssa_Backup/tl_2022_06_tract/tl_2022_06_tract.shp")
+#plot(ca)
+
+# Convert FIA plot data to an sf object 
+  # first remove NAs
+  ca_plot_clean <- ca_plot %>%
+  filter(!is.na(LON) & !is.na(LAT))
+  
+  #then use coords to convert to sf
+  fia_sf <- st_as_sf(ca_plot_clean, coords = c("LON", "LAT"), crs = 4326)
+  
+# match crs
+  fire_per <- st_transform(fire_per, st_crs(fia_sf))
+  
+# This returns a list: one element per plot, containing indices of intersecting fire polygons
+intersections <- st_intersects(fia_sf, fire_per, sparse = TRUE)
+
+# Check if each plot has any intersections (i.e., non-empty list element)
+fia_sf$fire_intersect <- lengths(intersections) > 0
+
+# Convert to 1/0 instead of TRUE/FALSE 
+fia_sf$fire_intersect <- as.integer(fia_sf$fire_intersect)
+
+# now we will join to ca_grm_travel
+
+  # First extract just the plot ID and fire_intersect column from the sf object
+  fire_flag_df <- fia_sf %>%
+  sf::st_drop_geometry() %>%
+  dplyr::select(PLOT, fire_intersect) 
+  
+  # rename PLOT to match with ca_grm PLOT_CD
+  names(fire_flag_df)[names(fire_flag_df) == "PLOT"] <- "PLOT_CD"
+
+  # make PLOT_CD a character
+  fire_flag_df$PLOT_CD <- as.character(fire_flag_df$PLOT_CD)
+  
+  # make sure each plot appears only once
+  fire_flag_unique <- fire_flag_df %>%
+  group_by(PLOT_CD) %>%
+  summarise(fire_intersect = max(fire_intersect, na.rm = TRUE), .groups = "drop")
+  
+  # now join
+  ca_grm_travel_fire <- ca_grm_travel %>%
+  dplyr::left_join(fire_flag_unique, by = "PLOT_CD")
+  
+  # make fire_intersect a factor
+  ca_grm_travel_fire$fire_intersect <- as.factor(ca_grm_travel_fire$fire_intersect)
+```
+
+**Findings:**
+
+*Q1)* We ran a logistic regression to determine how distance from the nearest mill affects the probability of fire.
+
+```{r}
+  # Merchantable
+    q1M <- glm(fire_intersect ~ OWH_Merchantable, data = ca_grm_travel_fire, family = "binomial")
+    summary(q1M)
+    
+  # Chips
+    
+    q1C <- glm(fire_intersect ~ OWH_Chips, data = ca_grm_travel_fire, family = "binomial")
+    summary(q1C)
+    
+```
+
+Using the fire perimeter data to determine fire occurrence, we find that for every additional hour in distance to a merchantable mill, the log odds of fire increase by 0.09028 (p = 0.000762). Similarly, for every additional hour in distance to a chips mill, the log odds of fire increase by 0.15161 (p = 6.79e-10). These results indicate that plots farther away from mills are significantly more likely to experience fire.
+
+*Q2)* To see if decreased management is the mechanism increasing probability of fire farther from mills, we ran a logistic regression to see how distance from mills affects probability of treatment (which mostly refers to cutting, as well as a little preparation for planting).
+
+```{r}
+#| echo: false
+# clean data for TRTCD = 10 (cutting) or 20 (Site preparation - Clearing, slash burning, chopping, disking, bedding, or other practices clearly intended to prepare a site for either natural or artificial regeneration.)
+  ca_grm_travel_trtcd_grp <- ca_grm_travel_fire %>%
+  mutate(
+    TRTCD_CUT_PREP = if_else(
+      as.numeric(as.character(TRTCD1)) %in% 10:20 |
+      as.numeric(as.character(TRTCD2)) %in% 10:20 |
+      as.numeric(as.character(TRTCD3)) %in% 10:20,
+      1, 0
+    )
+  )
+```
+
+```{r}
+# Merchantable
+  q2aM <- glm(TRTCD_CUT_PREP ~ OWH_Merchantable, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2aM)
+  
+  # Chips
+  q2aC <- glm(TRTCD_CUT_PREP ~ OWH_Chips, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2aC)
+```
+
+The log odds of treatment decrease by 0.56457 and 0.57778 for merchantable and chip mills, respectively (p \<2e-16). 
+
+We then ran a logistic regression to see if there is more fire when there is less management, controlling for distance.
+
+```{r}
+# Merchantable
+  q2bM <- glm(fire_intersect ~ OWH_Merchantable + TRTCD_CUT_PREP, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2bM)
+  
+  # Chips
+  q2bC <- glm(fire_intersect ~ OWH_Chips + TRTCD_CUT_PREP, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2bC) 
+```
+
+For merchantable mills, the log odds of fire decrease by 0.25618 when there is treatment, compared to plots without treatment (p = 0.00519). Further, for every additional hour in distance to a merchantable mill, the log odds of fire increase by 0.08316 (p = 0.00202). This is down from 0.09028 when treatment is not considered, which means that treatment mediates the effect of distance on fire.
+
+A causal mediation analysis reveals that 13% of the effect of distance from merchantable mills on the probability of fire is explained by reduced management (p = 0.01). We found a similar trend for Chip mills: the log odds of fire decrease by 0.25067 when there is treatment compared to no treatment (p = 0.00534). For every additional hour in distance to a chip mill, the log odds of fire increase by 0.14422 (p = 5.3e-09). This is down from 0.1516 when treatment is not considered, meaning that treatment mediates the effect of distance on fire. A causal mediation analysis reveals that reduced management explains 8.9% of the effect of distance from merchantable mills on the probability of fire (p= 0.002).
+
+```{r}
+# Mediation analysis: does management effect on fire interact with mill distance?
+  
+  # Merchantable
+  med_outM <- mediate(q2aM, q2bM,
+                     treat = "OWH_Merchantable",
+                     mediator = "TRTCD_CUT_PREP",
+                     boot = TRUE, sims = 1000)
+  
+  summary(med_outM)
+  
+  #Chips
+  med_outC <- mediate(q2aC, q2bC,
+                     treat = "OWH_Chips",
+                     mediator = "TRTCD_CUT_PREP",
+                     boot = TRUE, sims = 1000)
+  
+  summary(med_outC)
+```
+
+*Q3)* To determine if tree mortality increases with distance from mills, we ran a linear regression using mortality carbon per acre to represent mortality. For every additional hour in distance to a chip mill, the mortality carbon per acre increased by 80.28 tons (p = 0.00124). However, we found no significant effect on distance from merchantable mills (p = 0.0804). These results demonstrate that tree mortality significantly increases with distance to chip mills.
+
+```{r}
+# Merchantable
+q3aM <- lm(MORT_CARB_AG_ACRE ~ OWH_Merchantable, data = ca_grm_travel_trtcd_grp)
+summary(q3aM)
+
+#Chips
+q3aC <- lm(MORT_CARB_AG_ACRE ~ OWH_Chips, data = ca_grm_travel_trtcd_grp)
+summary(q3aC)
+```
