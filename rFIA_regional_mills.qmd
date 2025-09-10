@@ -20,6 +20,9 @@ library(readr)
 library(sf)
 library(multcomp)
 library(mediation)
+library(lme4)
+library(broom.mixed)
+library(ggeffects)
 ```
 
 ## How does distance to mill affect FIA plot characteristics?
@@ -31,6 +34,8 @@ library(mediation)
 *Q2) Does distance increase the probability of fire because there’s less management happening farther from mills?*
 
 *Q3) Does tree mortality increase as distance from mills increases?*
+
+We separate analyses by CA resource regions
 
 **Code Setup**
 
@@ -110,12 +115,14 @@ Fire Spatial Data
 
 ```{r}
 #| echo: false
- # read in spatial fire perimeters
-fire_per <- read_sf("/Volumes/Alyssa_Backup/InterAgencyFirePerimeterHistory_All_Years_View/InterAgencyFirePerimeterHistory_All_Years_View.shp")
+# read in spatial fire perimeters
+fire_path <- "/Users/alyssajain/FIA/fire24_1.gdb"
 
-# read in ca boundaries
-ca <- read_sf("/Volumes/Alyssa_Backup/tl_2022_06_tract/tl_2022_06_tract.shp")
-#plot(ca)
+#find layers in gdb
+st_layers(fire_path)
+
+# get wildfire only
+wildfire <- st_read(fire_path, layer = "firep24_1") 
 
 # Convert FIA plot data to an sf object 
   # first remove NAs
@@ -125,57 +132,183 @@ ca <- read_sf("/Volumes/Alyssa_Backup/tl_2022_06_tract/tl_2022_06_tract.shp")
   #then use coords to convert to sf
   fia_sf <- st_as_sf(ca_plot_clean, coords = c("LON", "LAT"), crs = 4326)
   
-# match crs
-  fire_per <- st_transform(fire_per, st_crs(fia_sf))
+# read in CA resource regions
+resource_reg <- read_sf("CAResourceAreas/CAResourceAreas.shp")
+  head(resource_reg)
+    # info: 6 resource areas (ResourceAr)
+  # match crs to fia
+  resource_reg <- st_transform(resource_reg, st_crs(fia_sf))
+  
+  # Dissolve multipolygons into single polygons by region name
+  resource_reg_clean <- resource_reg %>%
+    group_by(ResourceAr) %>%
+    summarise(geometry = st_union(geometry), .groups = "drop") %>%
+    st_as_sf()
+  
+  # join resource reg to fia data
+  fia_with_region <- st_join(fia_sf, resource_reg_clean, left = TRUE)
+
+# Reproject wildfire data to match FIA CRS
+wildfire <- st_transform(wildfire, st_crs(fia_sf))
+
+# get rid of multisurface
+wildfire_clean <- wildfire %>%
+  filter(st_geometry_type(st_geometry(.)) %in% c("POLYGON", "MULTIPOLYGON"))
+
+# fix invalid geometries
+wildfire_geom <- st_geometry(wildfire_clean)
+
+invalid_idx <- which(!st_is_valid(wildfire_geom))
+
+if(length(invalid_idx) > 0){
+  fixed_geoms <- st_make_valid(wildfire_geom[invalid_idx])
+  wildfire_geom[invalid_idx] <- fixed_geoms
+  st_geometry(wildfire_clean) <- wildfire_geom
+}
+
+# Now test validity again
+sum(!st_is_valid(wildfire_clean))  # Should be 0 or very low
   
 # This returns a list: one element per plot, containing indices of intersecting fire polygons
-intersections <- st_intersects(fia_sf, fire_per, sparse = TRUE)
+wildfire_intersections <- st_intersects(fia_with_region, wildfire_clean, sparse = TRUE)
 
 # Check if each plot has any intersections (i.e., non-empty list element)
-fia_sf$fire_intersect <- lengths(intersections) > 0
+fia_with_region$wildfire_intersect <- lengths(wildfire_intersections) > 0
 
 # Convert to 1/0 instead of TRUE/FALSE 
-fia_sf$fire_intersect <- as.integer(fia_sf$fire_intersect)
+fia_with_region$wildfire_intersect <- as.integer(fia_with_region$wildfire_intersect)
 
 # now we will join to ca_grm_travel
+  # First create a plot ID column to match ca_grm_travel$pltID. This is UNITCD_STATECD_COUNTYCD_PLOT.
+    fia_with_region$pltID <- paste(fia_with_region$UNITCD, fia_with_region$STATECD, fia_with_region$COUNTYCD, fia_with_region$PLOT, sep = "_")
 
-  # First extract just the plot ID and fire_intersect column from the sf object
-  fire_flag_df <- fia_sf %>%
+  # Then extract just the plot ID, resource area, and fire_intersect column from the sf object
+  wildfire_flag_df <- fia_with_region %>%
   sf::st_drop_geometry() %>%
-  dplyr::select(PLOT, fire_intersect) 
-  
-  # rename PLOT to match with ca_grm PLOT_CD
-  names(fire_flag_df)[names(fire_flag_df) == "PLOT"] <- "PLOT_CD"
+  dplyr::select(pltID, wildfire_intersect, ResourceAr) 
 
-  # make PLOT_CD a character
-  fire_flag_df$PLOT_CD <- as.character(fire_flag_df$PLOT_CD)
+  # make pltID a character
+  wildfire_flag_df$pltID <- as.character(wildfire_flag_df$pltID)
   
-  # make sure each plot appears only once
-  fire_flag_unique <- fire_flag_df %>%
-  group_by(PLOT_CD) %>%
-  summarise(fire_intersect = max(fire_intersect, na.rm = TRUE), .groups = "drop")
+  # make sure each plot appears only once, in case a plot experiences multiple fires
+  wildfire_flag_unique <- wildfire_flag_df %>%
+  group_by(pltID) %>%
+  summarise(
+    wildfire_intersect = max(wildfire_intersect, na.rm = TRUE),
+    ResourceAr = first(ResourceAr),   # keep the resource region
+    .groups = "drop"
+  )
   
-  # now join
-  ca_grm_travel_fire <- ca_grm_travel %>%
-  dplyr::left_join(fire_flag_unique, by = "PLOT_CD")
+  
+  # now join to ca_grm
+  ca_grm_travel_wildfire <- ca_grm_travel %>%
+  dplyr::left_join(wildfire_flag_unique, by = "pltID")
   
   # make fire_intersect a factor
-  ca_grm_travel_fire$fire_intersect <- as.factor(ca_grm_travel_fire$fire_intersect)
+  ca_grm_travel_wildfire$wildfire_intersect <- as.factor(ca_grm_travel_wildfire$wildfire_intersect)
+  
+  # make resource area a factor
+  ca_grm_travel_wildfire$ResourceAr <- as.factor(ca_grm_travel_wildfire$ResourceAr)  
+ 
+
+
 ```
 
 **Findings:**
 
-*Q1)* We ran a logistic regression to determine how distance from the nearest mill affects the probability of fire.
+*Q1)* We ran a logistic regression to determine how distance from the nearest mill affects the probability of fire, using CA resource region as a random effect.
 
 ```{r}
   # Merchantable
-    q1M <- glm(fire_intersect ~ OWH_Merchantable, data = ca_grm_travel_fire, family = "binomial")
+   
+  # no regions
+   q1M <- glm(wildfire_intersect ~ OWH_Merchantable, data = ca_grm_travel_wildfire, family = "binomial")
     summary(q1M)
     
+    # regions as fixed effects with interaction term
+    q1M1 <- glm(wildfire_intersect ~ OWH_Merchantable * ResourceAr,
+            data = ca_grm_travel_wildfire, family = binomial)
+    summary(q1M1)
+    
+    # Extract coefficients (log-odds)
+    fixef_vals_q1M1 <- fixef(q1M1)
+    
+    # Tidy summary with SE, z, p-values
+    fixed_summary_q1M1 <- broom.mixed::tidy(q1M1, effects = "fixed")
+    
+    # Add odds ratios for interpretation
+    fixed_summary_q1M1 <- fixed_summary_q1M1 %>%
+      mutate(
+        odds_ratio = exp(estimate),
+        prob_change = plogis(estimate)
+      )
+    
+    print(fixed_summary_q1M1)
+    view(fixed_summary_q1M1)
+    
+    
+    # Marginal effects (predicted probabilities)
+    predsq1M1 <- ggpredict(q1M1, terms = c("OWH_Merchantable", "ResourceAr"))
+
+    # Plot
+    ggplot(predsq1M1, aes(x = x, y = predicted, color = group)) +
+      geom_line(size = 1.2) +
+      geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.15, color = NA) +
+      labs(
+        x = "OWH Merchantable",
+        y = "Predicted probability of wildfire",
+        color = "Resource Area",
+        fill  = "Resource Area",
+        title = "Interaction between OWH_Merchantable and ResourceAr"
+      ) +
+      theme_minimal(base_size = 14)
+    
+
+        
   # Chips
     
+    # no regions
     q1C <- glm(fire_intersect ~ OWH_Chips, data = ca_grm_travel_fire, family = "binomial")
     summary(q1C)
+    
+     # regions as fixed effects with interaction term
+    q1C1 <- glm(wildfire_intersect ~ OWH_Chips * ResourceAr,
+            data = ca_grm_travel_wildfire, family = binomial)
+    summary(q1C1)
+    
+    # Extract coefficients (log-odds)
+    fixef_vals_q1C1 <- fixef(q1C1)
+    
+    # Tidy summary with SE, z, p-values
+    fixed_summary_q1C1 <- broom.mixed::tidy(q1C1, effects = "fixed")
+    
+    # Add odds ratios for interpretation
+    fixed_summary_q1C1 <- fixed_summary_q1C1 %>%
+      mutate(
+        odds_ratio = exp(estimate),
+        prob_change = plogis(estimate)
+      )
+    
+    print(fixed_summary_q1C1)
+    view(fixed_summary_q1C1)
+    
+    
+    # Marginal effects (predicted probabilities)
+    predsq1C1 <- ggpredict(q1C1, terms = c("OWH_Chips", "ResourceAr"))
+
+    # Plot
+    ggplot(predsq1C1, aes(x = x, y = predicted, color = group)) +
+      geom_line(size = 1.2) +
+      geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.15, color = NA) +
+      labs(
+        x = "OWH Chips",
+        y = "Predicted probability of wildfire",
+        color = "Resource Area",
+        fill  = "Resource Area",
+        title = "Interaction between OWH_Chips and ResourceAr"
+      ) +
+      theme_minimal(base_size = 14)
+    
     
 ```
 
@@ -243,6 +376,36 @@ A causal mediation analysis reveals that 13% of the effect of distance from merc
                      boot = TRUE, sims = 1000)
   
   summary(med_outC)
+```
+
+We are also going to run a Cox Proportional Hazards model. First we figured out which variables might be predictors of wildfire by running generalized linear models
+
+```{r}
+# test stocking density
+  qsdi <- glm(wildfire_intersect ~ GSSTKCD, data = ca_grm_travel_wildfire, family = "binomial")
+  summary(qsdi)
+   # not significant predictor
+  
+# test forest type
+  qftyp <- glm(wildfire_intersect ~ FORTYPCD, data = ca_grm_travel_wildfire, family = "binomial")
+  summary(qftyp)
+   # some types are significant significant predictor
+  
+# test live basal area
+  qbal <- glm(wildfire_intersect ~ BALIVE, data = ca_grm_travel_wildfire, family = "binomial")
+  summary(qbal)
+   # small effect but significant
+
+# test physiographic class code
+  qphys <- glm(wildfire_intersect ~ PHYSCLCD, data = ca_grm_travel_wildfire, family = "binomial")
+  summary(qphys)
+   # some xeric and mesic sites decrease wildfire risk, but that makes no sense, they should increase it...
+  
+# test disturbance code
+  qdstrb <- glm(wildfire_intersect ~ DSTRBCD1, data = ca_grm_travel_wildfire, family = "binomial")
+  summary(qdstrb)
+  
+
 ```
 
 *Q3)* To determine if tree mortality increases with distance from mills, we ran a linear regression using mortality carbon per acre to represent mortality. For every additional hour in distance to a chip mill, the mortality carbon per acre increased by 80.28 tons (p = 0.00124). However, we found no significant effect on distance from merchantable mills (p = 0.0804). These results demonstrate that tree mortality significantly increases with distance to chip mills.

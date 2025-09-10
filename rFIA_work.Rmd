@@ -19,6 +19,12 @@ library(readr)
 library(sf)
 library(multcomp)
 library(mediation)
+library(terra)
+library(mgcv)
+library(purrr)
+library(DHARMa)
+library(nnet)
+library(MASS)
 ```
 
 load data
@@ -1313,6 +1319,736 @@ summary(q4a)
   # coefficient = -3.206e-05, p-value = 0.0473
 
 ```
+
+# same Qs but with fire perim database focused on wildfire
+```{r}
+#find layers in gdb
+fire_path <- "/Users/alyssajain/FIA/fire24_1.gdb"
+st_layers(fire_path)
+
+# get wildfire only
+wildfire <- st_read(fire_path, layer = "firep24_1") 
+
+# Reproject wildfire data to match FIA CRS
+wildfire <- st_transform(wildfire, st_crs(fia_sf))
+
+# get rid of multisurface
+wildfire_clean <- wildfire %>%
+  filter(st_geometry_type(st_geometry(.)) %in% c("POLYGON", "MULTIPOLYGON"))
+
+# fix invalid geometries
+wildfire_geom <- st_geometry(wildfire_clean)
+
+invalid_idx <- which(!st_is_valid(wildfire_geom))
+
+if(length(invalid_idx) > 0){
+  fixed_geoms <- st_make_valid(wildfire_geom[invalid_idx])
+  wildfire_geom[invalid_idx] <- fixed_geoms
+  st_geometry(wildfire_clean) <- wildfire_geom
+}
+
+# Now test validity again
+sum(!st_is_valid(wildfire_clean))  # Should be 0 or very low
+  
+# This returns a list: one element per plot, containing indices of intersecting fire polygons
+wildfire_intersections <- st_intersects(fia_sf, wildfire_clean, sparse = TRUE)
+
+# Check if each plot has any intersections (i.e., non-empty list element)
+fia_sf$wildfire_intersect <- lengths(wildfire_intersections) > 0
+
+# Convert to 1/0 instead of TRUE/FALSE 
+fia_sf$wildfire_intersect <- as.integer(fia_sf$wildfire_intersect)
+
+# now we will join to ca_grm_travel
+
+  # First extract just the plot ID and fire_intersect column from the sf object
+  wildfire_flag_df <- fia_sf %>%
+  sf::st_drop_geometry() %>%
+  dplyr::select(PLOT, wildfire_intersect) 
+  
+  # rename PLOT to match with ca_grm PLOT_CD
+  names(wildfire_flag_df)[names(wildfire_flag_df) == "PLOT"] <- "PLOT_CD"
+
+  # make PLOT_CD a character
+  wildfire_flag_df$PLOT_CD <- as.character(wildfire_flag_df$PLOT_CD)
+  
+  # make sure each plot appears only once
+  wildfire_flag_unique <- wildfire_flag_df %>%
+  group_by(PLOT_CD) %>%
+  summarise(wildfire_intersect = max(wildfire_intersect, na.rm = TRUE), .groups = "drop")
+  
+  # now join
+  ca_grm_travel_wildfire <- ca_grm_travel %>%
+  dplyr::left_join(wildfire_flag_unique, by = "PLOT_CD")
+  
+  # make fire_intersect a factor
+  ca_grm_travel_wildfire$wildfire_intersect <- as.factor(ca_grm_travel_wildfire$wildfire_intersect)
+```  
+# now analyze if distance to mill causes more fire
+```{r}
+  # Merchantable
+    q1M <- glm(wildfire_intersect ~ OWH_Merchantable, data = ca_grm_travel_wildfire, family = "binomial")
+    summary(q1M)
+      # for every additional hour in distance to a Merchantable mill, the log odds of fire increase by 0.08274 (P = 0.00201)
+exp(0.08274)
+
+    # plot residuals
+    res = simulateResiduals(q1M)
+    plot(res)
+      
+  # Chips
+    
+    q1C <- glm(wildfire_intersect ~ OWH_Chips, data = ca_grm_travel_wildfire, family = "binomial")
+    summary(q1C)
+      # for every additional hour in distance to a Chips mill, the log odds of fire increase by 0.15013 (P = 9.52e-10)
+    
+    # plot residuals
+    res = simulateResiduals(q1C)
+    plot(res)
+      
+
+
+```
+# now analyze stocking density
+```{r}
+# Merchantable
+
+# Make sure stocking density is treated as an ordered factor
+ca_grm_travel_wildfire$GSSTKCD <- factor(
+  ca_grm_travel_wildfire$GSSTKCD,
+  levels = c(1, 2, 3, 4, 5),
+  ordered = TRUE
+)
+
+# Fit ordinal logistic regression
+stockingM <- polr(GSSTKCD ~ OWH_Merchantable,
+                  data = ca_grm_travel_wildfire,
+                  Hess = TRUE)
+
+# Summary
+summary(stockingM)
+
+# Get p-values for coefficients
+(ctable <- coef(summary(stockingM)))
+p_values <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+p_values
+
+# McFadden's pseudo-R² for model fit
+null_logLik <- logLik(polr(GSSTKCD ~ 1, 
+                           data = ca_grm_travel_wildfire, Hess = TRUE))
+model_logLik <- logLik(stockingM)
+
+pseudoR2 <- 1 - (as.numeric(model_logLik) / as.numeric(null_logLik))
+pseudoR2
+
+# plot predicted probabilities
+
+# Generate new data across the observed range of OWH_Merchantable
+new_data <- data.frame(
+  OWH_Merchantable = seq(
+    min(ca_grm_travel_wildfire$OWH_Merchantable, na.rm = TRUE),
+    max(ca_grm_travel_wildfire$OWH_Merchantable, na.rm = TRUE),
+    length.out = 100
+  )
+)
+
+# Predict probabilities for each stocking density category
+pred_probs <- predict(stockingM, newdata = new_data, type = "probs")
+
+# Convert to long format for ggplot
+pred_df <- cbind(new_data, pred_probs)
+pred_df_long <- tidyr::pivot_longer(pred_df,
+                                    cols = starts_with("1"):starts_with("5"),
+                                    names_to = "GSSTKCD",
+                                    values_to = "Probability")
+
+# Plot
+ggplot(pred_df_long, aes(x = OWH_Merchantable, y = Probability,
+                         color = GSSTKCD)) +
+  geom_line(size = 1.2) +
+  labs(
+    title = "Predicted Probability of Stocking Density by Distance to Mill",
+    x = "Distance to Mill (OWH_Merchantable)",
+    y = "Predicted Probability",
+    color = "Stocking Density"
+  ) +
+  theme_minimal(base_size = 14)
+
+# Chips
+
+# Make sure stocking density is treated as an ordered factor
+ca_grm_travel_wildfire$GSSTKCD <- factor(
+  ca_grm_travel_wildfire$GSSTKCD,
+  levels = c(1, 2, 3, 4, 5),
+  ordered = TRUE
+)
+
+# Fit ordinal logistic regression
+stockingC <- polr(GSSTKCD ~ OWH_Chips,
+                  data = ca_grm_travel_wildfire,
+                  Hess = TRUE)
+
+# Summary
+summary(stockingC)
+
+# Get p-values for coefficients
+(ctable <- coef(summary(stockingC)))
+p_values <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+p_values
+
+# McFadden's pseudo-R² for model fit
+null_logLik <- logLik(polr(GSSTKCD ~ 1, 
+                           data = ca_grm_travel_wildfire, Hess = TRUE))
+model_logLik <- logLik(stockingC)
+
+pseudoR2 <- 1 - (as.numeric(model_logLik) / as.numeric(null_logLik))
+pseudoR2
+
+# plot predicted probabilities
+
+# Generate new data across the observed range of OWH_Merchantable
+new_data <- data.frame(
+  OWH_Merchantable = seq(
+    min(ca_grm_travel_wildfire$OWH_Chips, na.rm = TRUE),
+    max(ca_grm_travel_wildfire$OWH_Chips, na.rm = TRUE),
+    length.out = 100
+  )
+)
+
+# Predict probabilities for each stocking density category
+pred_probs <- predict(stockingC, newdata = new_data, type = "probs")
+
+# Convert to long format for ggplot
+pred_df <- cbind(new_data, pred_probs)
+pred_df_long <- tidyr::pivot_longer(pred_df,
+                                    cols = starts_with("1"):starts_with("5"),
+                                    names_to = "GSSTKCD",
+                                    values_to = "Probability")
+
+# Plot
+ggplot(pred_df_long, aes(x = OWH_Chips, y = Probability,
+                         color = GSSTKCD)) +
+  geom_line(size = 1.2) +
+  labs(
+    title = "Predicted Probability of Stocking Density by Distance to Mill",
+    x = "Distance to Mill (OWH_Chips)",
+    y = "Predicted Probability",
+    color = "Stocking Density"
+  ) +
+  theme_minimal(base_size = 14)
+```
+# now analyze with bins
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+
+# preview data: look at distance distribution
+hist(ca_grm_travel_wildfire$OWH_Chips, breaks = 50)
+hist(ca_grm_travel_wildfire$OWH_Merchantable, breaks = 50)
+
+summary(ca_grm_travel_wildfire$OWH_Chips)
+summary(ca_grm_travel_wildfire$OWH_Merchantable)
+
+## CHIPS
+# Step 1: Create distance bins 
+ca_grm_travel_wildfire_chips_bins <- ca_grm_travel_wildfire %>%
+  filter(!is.na(OWH_Chips)) %>%
+  mutate(
+    distance_chips_bin = cut(
+      OWH_Chips,
+      breaks = c(0, 1, 2, 3, 4, 5),
+      include.lowest = TRUE,
+      right = FALSE,  # e.g., [0,1), [1,2), etc.
+      labels = c("0–1 hr", "1–2 hr", "2–3 hr", "3–4 hr", "4–5 hr")
+    )
+  )
+# Step 2: Spatial join to determine fire presence
+fia_with_fire <- fia_sf %>%
+  mutate(plot_id = row_number()) %>%
+  st_join(wildfire_clean %>% select(geometry), join = st_intersects, left = TRUE) %>%
+  mutate(fire_present = !is.na(st_geometry(.)))
+
+# Step 3: Summarize fire probability by distance bin
+fire_prob_by_chips_bin <- ca_grm_travel_wildfire_chips_bins %>%
+  st_drop_geometry() %>%
+  group_by(distance_chips_bin) %>%
+  summarise(
+    n_total = n(),
+    n_fire = sum(as.numeric(wildfire_intersect), na.rm = TRUE),
+    fire_probability = n_fire / n_total
+  )
+
+# Step 4: Plot the results
+ggplot(fire_prob_by_chips_bin, aes(x = distance_chips_bin, y = fire_probability)) +
+  geom_col(fill = "firebrick") +
+  labs(
+    title = "Probability of Fire by Distance to Chips Mill",
+    x = "Distance to Mill (binned)",
+    y = "Probability of Fire"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Step 5: Logistic Regression
+  # Ensure distance_bin is a factor
+  ca_grm_travel_wildfire_chips_bins$distance_chips_bin <- factor(ca_grm_travel_wildfire_chips_bins$distance_chips_bin, ordered = TRUE)
+  
+  # Fit logistic regression with distance bins
+  logit_bin_model <- glm(wildfire_intersect ~ distance_chips_bin, data = ca_grm_travel_wildfire_chips_bins, family = binomial())
+  
+  # Model summary
+  summary(logit_bin_model)
+
+## MERCH
+# Step 1: Create distance bins 
+ca_grm_travel_wildfire_merch_bins <- ca_grm_travel_wildfire %>%
+  filter(!is.na(OWH_Merchantable)) %>%
+  mutate(
+    distance_merch_bin = cut(
+      OWH_Merchantable,
+      breaks = c(0, 1, 2, 3, 4, 5),
+      include.lowest = TRUE,
+      right = FALSE,  # e.g., [0,1), [1,2), etc.
+      labels = c("0–1 hr", "1–2 hr", "2–3 hr", "3–4 hr", "4–5 hr")
+    )
+  )
+
+# Step 3: Summarize fire probability by distance bin
+fire_prob_by_merch_bin <- ca_grm_travel_wildfire_merch_bins %>%
+  st_drop_geometry() %>%
+  group_by(distance_merch_bin) %>%
+  summarise(
+    n_total = n(),
+    n_fire = sum(as.numeric(wildfire_intersect), na.rm = TRUE),
+    fire_probability = n_fire / n_total
+  )
+
+# Step 4: Plot the results
+ggplot(fire_prob_by_merch_bin, aes(x = distance_merch_bin, y = fire_probability)) +
+  geom_col(fill = "firebrick") +
+  labs(
+    title = "Probability of Fire by Distance to Merchantable Mill",
+    x = "Distance to Mill (binned)",
+    y = "Probability of Fire"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Step 5: Logistic Regression
+  # Ensure distance_bin is a factor
+  ca_grm_travel_wildfire_merch_bins$distance_merch_bin <- factor(ca_grm_travel_wildfire_merch_bins$distance_merch_bin, ordered = TRUE)
+  
+  # Fit logistic regression with distance bins
+  logit_bin_model <- glm(wildfire_intersect ~ distance_merch_bin, data = ca_grm_travel_wildfire_merch_bins, family = binomial())
+  
+  # Model summary
+  summary(logit_bin_model)
+  
+# Step 6: non linear model
+  # GAM without bins chips
+  model_gam_chips <- gam(wildfire_intersect ~ s(OWH_Chips), data = ca_grm_travel_wildfire, family = binomial)
+  
+  plot(model_gam_chips)
+  
+    # switch to probability
+    # Keep only complete rows for the distance column
+    valid_rows <- complete.cases(ca_grm_travel_wildfire$OWH_Chips)
+    
+    # Filter both x and y to the same valid rows
+    x_vals <- ca_grm_travel_wildfire$OWH_Chips[valid_rows]
+    predicted_prob_chips <- predict(model_gam_chips, newdata = ca_grm_travel_wildfire[valid_rows, ], type = "response")
+    
+    plot(x_vals, predicted_prob_chips,
+         xlab = "Travel Time to Mill (hrs)",
+         ylab = "Predicted Wildfire Probability",
+         main = "Wildfire Risk vs. Distance to Mill")
+    
+    # GAM without bins merch
+  model_gam_merch <- gam(wildfire_intersect ~ s(OWH_Merchantable), data = ca_grm_travel_wildfire, family = binomial)
+  
+  plot(model_gam_merch)
+  
+    # switch to probability
+    # Keep only complete rows for the distance column
+    valid_rows <- complete.cases(ca_grm_travel_wildfire$OWH_Merchantable)
+    
+    # Filter both x and y to the same valid rows
+    x_vals <- ca_grm_travel_wildfire$OWH_Merchantable[valid_rows]
+    predicted_prob_merch <- predict(model_gam_merch, newdata = ca_grm_travel_wildfire[valid_rows, ], type = "response")
+    
+    plot(x_vals, predicted_prob_merch,
+         xlab = "Travel Time to Mill (hrs)",
+         ylab = "Predicted Wildfire Probability",
+         main = "Wildfire Risk vs. Distance to Mill")
+    
+# Split by fuel load
+library(mgcv)
+library(dplyr)
+
+# Get unique fuel types (remove NA and blanks)
+fuel_types <- ca_grm_travel_wildfire %>%
+  filter(!is.na(DWM_FUELBED_TYPCD), DWM_FUELBED_TYPCD != "") %>%
+  distinct(DWM_FUELBED_TYPCD) %>%
+  pull()
+
+# Create empty summary table
+gam_summaries <- data.frame(
+  fuel_type = character(),
+  p_value = numeric(),
+  deviance_explained = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through each fuel type
+for (fuel in fuel_types) {
+  df_sub <- ca_grm_travel_wildfire %>%
+    filter(DWM_FUELBED_TYPCD == fuel)
+
+  if (nrow(df_sub) >= 30 && length(unique(df_sub$OWH_Chips)) >= 5) {
+    model <- tryCatch(
+      gam(wildfire_intersect ~ s(OWH_Chips, k = 10), data = df_sub, 
+          family = binomial, method = "REML"),
+      error = function(e) NULL
+    )
+
+    if (!is.null(model)) {
+      s <- summary(model)
+      # Check if smooth term exists
+      if (!is.null(s$s.table)) {
+        gam_summaries <- rbind(gam_summaries, data.frame(
+          fuel_type = fuel,
+          p_value = s$s.table[1, "p-value"],
+          deviance_explained = s$dev.expl
+        ))
+      }
+    }
+  }
+}
+
+# View result
+print(gam_summaries)
+
+### working code  
+  # Create empty list to collect data
+prediction_list <- list()
+
+  # Get all unique fuel types (excluding NA and empty string)
+  fuel_types <- ca_grm_travel_wildfire %>%
+    filter(!is.na(DWM_FUELBED_TYPCD), DWM_FUELBED_TYPCD != "") %>%
+    distinct(DWM_FUELBED_TYPCD) %>%
+    pull()
+
+  # Loop over fuel types
+  for (fuel in fuel_types) {
+    df_sub <- ca_grm_travel_wildfire %>% filter(DWM_FUELBED_TYPCD == fuel)
+
+  # Only run if we have enough data
+  if (nrow(df_sub) >= 30 && length(unique(df_sub$OWH_Chips)) >= 5) {
+    # Fit GAM with smoothing spline
+    model <- gam(wildfire_intersect ~ s(OWH_Chips, k = 5), data = df_sub, family = binomial)
+
+    # Generate new travel time values
+    new_df <- data.frame(OWH_Chips = seq(min(df_sub$OWH_Chips, na.rm = TRUE),
+                                         max(df_sub$OWH_Chips, na.rm = TRUE), length.out = 100))
+    
+    # Predict probability
+    new_df$probability <- predict(model, newdata = new_df, type = "response")
+    new_df$fuel_type <- fuel
+
+    # Add to list
+    prediction_list[[fuel]] <- new_df
+  }
+}
+
+    # Combine all predictions
+    prediction_df <- bind_rows(prediction_list)
+    
+    # plot all
+    ggplot(prediction_df, aes(x = OWH_Chips, y = probability)) +
+  geom_line(color = "#D95F02", size = 1) +
+  facet_wrap(~ fuel_type, scales = "free_y") +
+  labs(
+    title = "Predicted Wildfire Probability by Travel Time and Fuel Type",
+    x = "Travel Time to Mill (hours)",
+    y = "Predicted Probability of Wildfire"
+  ) +
+  theme_minimal(base_size = 12)
+
+  # extract p-value and edf
+  
+    # Create a dataframe to store summary stats
+    gam_summaries <- data.frame(
+      fuel_type = character(),
+      edf = numeric(),
+      F_value = numeric(),
+      p_value = numeric(),
+      deviance_explained = numeric(),
+      stringsAsFactors = FALSE
+    )
+    
+    # Loop over each fuel type and fit a GAM
+    for (fuel in fuel_types) {
+      df_sub <- ca_grm_travel_wildfire %>%
+        filter(DWM_FUELBED_TYPCD == fuel)
+    
+      if (nrow(df_sub) > 10 && length(unique(df_sub$OWH_Chips)) > 3) {
+        model <- gam(wildfire_intersect ~ s(OWH_Chips), data = df_sub, family = binomial)
+        model_summary <- summary(model)
+    
+      # protect from small sample size
+      safe_summary <- function(model) {
+      s <- tryCatch(summary(model), error = function(e) NULL)
+      if (!is.null(s) && !is.null(s$s.table)) {
+        return(s$s.table)
+      } else {
+        return("No smooth terms or model failed.")
+      }
+    }
+    
+    # Example for a list of models
+    lapply(model, safe_summary)
+
+        
+        gam_summaries <- rbind(gam_summaries, data.frame(
+          fuel_type = fuel,
+          edf = model_summary$s.table[1, "edf"],
+          F_value = model_summary$s.table[1, "F"],
+          p_value = model_summary$s.table[1, "p-value"],
+          deviance_explained = model_summary$dev.expl
+        ))
+      }
+    }
+  
+  
+    
+    
+  
+  
+        
+``` 
+
+
+
+
+# now analyze # of fires per pixel 
+```{r}
+# Step 1: Ensure wildfire has unique fire ID
+wildfire_vect <- vect(wildfire_clean)
+
+# Step 2: Template raster
+template <- rast(ext(wildfire_vect), resolution = 1000, crs = crs(wildfire_vect))
+
+# Step 3: Create output raster with 0s
+fire_count <- rast(template)
+values(fire_count) <- 0
+
+# Step 4: Loop over unique fire IDs
+unique_ids <- unique(wildfire$FIRE_NAME)
+pb <- txtProgressBar(min = 0, max = length(unique_ids), style = 3)
+
+for (i in seq_along(unique_ids)) {
+  fid <- unique_ids[i]
+  
+  # Subset to one fire (could be multipolygon)
+  fire_i <- wildfire_vect[wildfire_vect$FIRE_NAME == fid, ]
+
+  # Rasterize: presence = 1 where this fire burned
+  r_fire <- tryCatch({
+    rasterize(fire_i, template, field = 1, background = 0)
+  }, error = function(e) NULL)
+  
+  if (!is.null(r_fire)) {
+    # Add fire presence to cumulative count
+    fire_count <- fire_count + (r_fire > 0)
+  }
+
+  setTxtProgressBar(pb, i)
+}
+close(pb)
+
+# Save result
+writeRaster(fire_count, "unique_wildfires_per_pixel.tif", overwrite = TRUE)
+
+# Plot
+plot(fire_count, main = "Unique Fires per Pixel")
+
+# Check if FIRE_NAME exists and is unique per fire
+length(unique(wildfire_vect$FIRE_NAME))   # Should be ~22,000
+nrow(wildfire_vect)                     # Might be >> 22,000 if multiple polygons per fire
+
+
+# 1. Validate and fix geometries
+# Create a copy to work with
+wildfire_valid <- wildfire_vect
+
+# Identify invalid geometries
+invalid_idx <- which(!is.valid(wildfire_valid))
+
+# Fix only invalid ones
+wildfire_valid[invalid_idx] <- makeValid(wildfire_valid[invalid_idx])
+
+# Optional: confirm all are valid now
+all(is.valid(wildfire_valid))  # should return TRUE
+
+
+# Count total geometries
+total <- nrow(wildfire_vect)
+
+# Identify invalid ones
+invalid_idx <- which(!is.valid(wildfire_vect))
+
+# Count invalid geometries
+num_invalid <- length(invalid_idx)
+
+# Report
+cat("Total features:", total, "\n")
+cat("Invalid geometries:", num_invalid, "\n")
+cat("Percent invalid:", round(100 * num_invalid / total, 2), "%\n")
+
+# Drop invalid geometries
+wildfire_valid <- wildfire_valid[is.valid(wildfire_valid), ]
+
+# Confirm
+all(is.valid(wildfire_valid))  # should now return TRUE
+
+# Group by FIRE_ID: each fire becomes one geometry
+wildfire_dissolved <- aggregate(wildfire_valid, by = "FIRE_NAME", fun = "first")  # or use dplyr::first if needed
+
+# Confirm correct count
+n_fires <- nrow(wildfire_dissolved)         # Should match length of unique fire IDs
+length(unique(wildfire_dissolved$FIRE_NAME))  # Should be the same
+
+# Create template raster
+template <- rast(ext(wildfire_dissolved), resolution = 1000, crs = crs(wildfire_dissolved))
+
+# Initialize output raster
+fire_count <- rast(template)
+values(fire_count) <- 0
+
+# Loop through each fire
+pb <- txtProgressBar(min = 0, max = n_fires, style = 3)
+
+for (i in seq_len(n_fires)) {
+  fire_geom <- wildfire_dissolved[i, ]
+
+  r_fire <- tryCatch({
+    rasterize(fire_geom, template, field = 1, background = 0)
+  }, error = function(e) NULL)
+
+  if (!is.null(r_fire)) {
+    fire_count <- fire_count + (r_fire > 0)
+  }
+
+  setTxtProgressBar(pb, i)
+}
+close(pb)
+
+#inspect values
+hist(values(fire_count), breaks = 20, main = "Histogram: Unique Fires per Pixel")
+summary(values(fire_count))
+plot(fire_count)
+
+# take 3
+library(terra)
+
+# Step 1: Read fire shapefile
+fire <- vect(wildfire_clean)
+
+# Step 2: Create a unique fire ID (optional: adjust if needed)
+fire$fire_id <- paste0(fire$FIRE_NAME)
+
+  # Drop invalid geometries
+  fire_valid <- fire[is.valid(fire), ]
+
+# Step 3: Dissolve fire polygons by unique fire ID
+fire_dissolved <- aggregate(fire_valid, by = "fire_id")
+
+  # Remove invalids
+  fire_dissolved <- fire_dissolved[is.valid(fire_dissolved), ]
+  
+  # Also remove empty ones
+  fire_dissolved <- fire_dissolved[!is.empty(fire_dissolved), ]
+
+# Step 4: Create an empty raster (same extent/res as your analysis raster or base map)
+template <- rast(res = 30, extent = ext(fire), crs = crs(fire))  # example with 30m resolution
+
+# Step 5: Rasterize each fire individually
+# We'll loop through fires and mark presence (1) on each raster
+
+raster_list <- list()
+
+for (i in 1:nrow(fire_dissolved)) {
+  this_fire <- fire_dissolved[i, ]
+  r <- rasterize(this_fire, template, field = 1)
+  raster_list[[i]] <- r
+}
+
+# Step 6: Stack and sum (clipping values >1 to 1, then summing)
+# This prevents multiple polygons from the same fire being counted more than once per pixel
+
+fire_stack <- rast(raster_list)
+fire_binary <- clamp(fire_stack, lower = 0, upper = 1)  # convert all to 0/1
+fire_count <- app(fire_binary, fun = sum, na.rm = TRUE)
+
+# Step 7: Check values
+hist(values(fire_count), breaks = 20, main = "Histogram: Unique Fires per Pixel")
+summary(values(fire_count))
+
+
+
+# bug fixes
+    # Inspect one fire polygon
+plot(fire_dissolved[1, ], col = "red", main = "Single Fire")
+
+# Plot raster grid on top
+plot(template, add = TRUE, border = "gray")
+
+# check geom
+geom_type <- geomtype(fire_dissolved[1, ])
+print(geom_type)  # Should say "polygons" or "multipolygons"
+
+# Area of geometry
+expanse(fire_dissolved[1, ])  # Should be > 0
+
+# buffer small polygons
+fire_dissolved_buffered <- buffer(fire_dissolved, width = 15)  # buffer by half a cell
+
+# Test again
+r_test <- rasterize(fire_dissolved[1, ], template, field = 1)
+plot(r_test)
+unique(values(r_test))  # Should include 1s now
+
+# Check geometry is not empty and has area
+fire_geom <- fire_dissolved[1, ]
+print(geomtype(fire_geom))         # Should be "polygons" or "multipolygons"
+print(expanse(fire_geom))          # Should be > 0
+print(st_is_empty(st_geometry(fire_geom)))  # Should be FALSE
+
+# recreate minimal raster
+  # Build a very tight raster around that fire polygon
+  tight_raster <- rast(ext(fire_geom), res = 30, crs = crs(fire_geom))
+  
+  # Now try rasterizing
+  r_test <- rasterize(fire_geom, tight_raster, field = 1)
+  plot(r_test)
+  unique(values(r_test))
+
+
+```
+# cursor
+```{r}
+# fix invalid geometries
+wildfire_valid <- st_make_valid(wildfire_clean)
+
+# Dissolve all polygons belonging to the same fire
+fires_dissolved <- wildfire_valid %>%
+  group_by_at(FIRE_NAME) %>%
+  summarise(geometry = st_union(geometry), .groups = "drop")
+
+```
+
 #######################
 #######################
 
@@ -1378,4 +2114,52 @@ for(i in 1:length(models)){ #this creates a variable i that starts with the valu
 kable(result, digits = 2, align = "c")
 
 
+```
+
+exploration
+```{r}
+# what are fuel loads like?
+ca_cond$DWM_FUELBED_TYPCD <- as.factor(ca_cond$DWM_FUELBED_TYPCD) # factorize
+summary(ca_cond$DWM_FUELBED_TYPCD) # summarize fuel load by type
+
+# check if fuel loads affect mortality
+lm_mort_fuel <- lm(MORT_CARB_AG_ACRE ~ DWM_FUELBED_TYPCD, data = ca_grm_table) 
+summary(lm_mort_fuel) # Adjusted R-squared: 0.04507
+
+lm_mort_fuel_1 <- lm(MORT_CARB_AG_ACRE ~ OWNGRPCD * DSTRBCD1 + OWNGRPCD * FORTYPCD + DSTRBCD2 + DSTRBCD3, data = ca_grm_table) 
+summary(lmi_mort1_2) # Adjusted R-squared: 0.3326
+
+# check if fuel loads affect fire. We need to use a glm because fire is not a continuous variable (i think)
+  # first factorize
+  ca_grm_travel_fire$DWM_FUELBED_TYPCD <- as.factor(ca_grm_travel_fire$DWM_FUELBED_TYPCD)
+
+  # now run glm
+  glm_fire_fuel <- glm(fire_intersect ~ DWM_FUELBED_TYPCD, data = ca_grm_travel_fire, family = "binomial")
+summary(glm_fire_fuel)
+
+# check if treatment affects fuel loads
+  # factorize
+  ca_grm_travel_trtcd_grp$DWM_FUELBED_TYPCD <- as.factor(ca_grm_travel_trtcd_grp$DWM_FUELBED_TYPCD)
+
+  #run glm  
+  glm_fuel_trt <- glm(DWM_FUELBED_TYPCD ~  TRTCD_CUT_PREP, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(glm_fuel_trt)
+  
+  #let's try a boxplot to see if different loads have different treatment averages
+  boxplot(TRTCD_CUT_PREP ~ DWM_FUELBED_TYPCD, data = ca_grm_travel_trtcd_grp)
+    # not helpful, maybe they were treated because of the high load
+  
+  # get means
+  fuel_trtcd_means <- ca_grm_travel_trtcd_grp %>%
+    group_by(DWM_FUELBED_TYPCD) %>%
+    summarise(Mean_Value = mean(TRTCD_CUT_PREP, na.rm = TRUE))
+  
+  fuel_trtcd_means
+  
+  # check if mill distance affects fuel load
+  
+    # Merchantable
+    ca_grm_travel_wildfire$DWM_FUELBED_TYPCD <- as.factor(ca_grm_travel_wildfire$DWM_FUELBED_TYPCD)
+    glm_mill_fuel <- multinom(DWM_FUELBED_TYPCD ~ OWH_Merchantable, data = ca_grm_travel_wildfire)
+  summary(glm_mill_fuel)
 ```
