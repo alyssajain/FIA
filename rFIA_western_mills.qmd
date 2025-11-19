@@ -41,7 +41,7 @@ library(nnet)
 
 *Q3) Does tree mortality increase as distance from mills increases?*
 
-We separate analyses by CA resource regions
+We separate analyses by resource regions
 
 **Code Setup**
 
@@ -122,13 +122,35 @@ Fire Spatial Data
 ```{r}
 #| echo: false
 # read in spatial fire perimeters
-fire_path <- "/Users/alyssajain/FIA/fire24_1.gdb"
+fire_path <- "/Users/alyssajain/Downloads/mtbs_perimeter_data/mtbs_perims_DD.shp"
+burns <- st_read(fire_path)
 
-#find layers in gdb
-st_layers(fire_path)
+#check crs
+st_crs(burns)
 
-# get wildfire only
-wildfire <- st_read(fire_path, layer = "firep24_1") 
+# filter for wildfire
+wildfire_all <- burns[burns$Incid_Type == "Wildfire", ]
+
+# read in State Shapefiles to clip boundaries
+states <- st_read("/Users/alyssajain/Downloads/cb_2018_us_state_5m/cb_2018_us_state_5m.shp")
+
+#check crs
+st_crs(states) # matches
+
+# filter states to CA, WA, OR
+western_states <- states[states$STUSPS %in% c("CA", "WA", "OR"), ]
+ca <- states[states$STUSPS == "CA", ]
+
+# Replace invalid geometries with valid ones
+wildfire_all <- st_make_valid(wildfire_all)
+western_states <- st_make_valid(western_states)
+ca <- st_make_valid(ca)
+
+# clip burns to CA
+CA_wildfire <- st_intersection(wildfire_all, ca)
+
+wildfire <- CA_wildfire
+
 
 # Convert FIA plot data to an sf object 
   # first remove NAs
@@ -157,26 +179,8 @@ resource_reg <- read_sf("CAResourceAreas/CAResourceAreas.shp")
 # Reproject wildfire data to match FIA CRS
 wildfire <- st_transform(wildfire, st_crs(fia_sf))
 
-# get rid of multisurface
-wildfire_clean <- wildfire %>%
-  filter(st_geometry_type(st_geometry(.)) %in% c("POLYGON", "MULTIPOLYGON"))
-
-# fix invalid geometries
-wildfire_geom <- st_geometry(wildfire_clean)
-
-invalid_idx <- which(!st_is_valid(wildfire_geom))
-
-if(length(invalid_idx) > 0){
-  fixed_geoms <- st_make_valid(wildfire_geom[invalid_idx])
-  wildfire_geom[invalid_idx] <- fixed_geoms
-  st_geometry(wildfire_clean) <- wildfire_geom
-}
-
-# Now test validity again
-sum(!st_is_valid(wildfire_clean))  # Should be 0 or very low
-  
 # This returns a list: one element per plot, containing indices of intersecting fire polygons
-wildfire_intersections <- st_intersects(fia_with_region, wildfire_clean, sparse = TRUE)
+wildfire_intersections <- st_intersects(fia_with_region, wildfire, sparse = TRUE)
 
 # Check if each plot has any intersections (i.e., non-empty list element)
 fia_with_region$wildfire_intersect <- lengths(wildfire_intersections) > 0
@@ -349,6 +353,8 @@ Using the fire perimeter data to determine fire occurrence, we find that for eve
       1, 0
     )
   )
+  
+
 ```
 
 ```{r}
