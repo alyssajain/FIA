@@ -1,0 +1,1928 @@
+---
+title: "Wildfire_Mills_Clean"
+author: "Alyssa N Jain"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+#| echo: false
+library(rFIA)
+library(ggplot2)
+library(dplyr)
+library(stats)
+library(knitr)
+library(tidyverse)
+library(tidyr)
+library(stringr)
+library(readr)
+library(sf)
+library(multcomp)
+library(mediation)
+library(lme4)
+library(broom.mixed)
+library(ggeffects)
+library(lfe)
+library(broom)
+library(purrr)
+library(nnet)
+library(terra)
+library(colorspace)
+```
+
+# How does distance to mill affect wildfire and management?
+
+**Questions:** We aim to answer the following questions:
+
+*Q1) Does distance from the nearest mill affect the probability of fire?*
+
+*Q2) Does distance increase the probability of fire because there’s less management happening farther from mills?*
+
+**Data Setup**
+
+FIA Data and GRM
+
+```{r}
+#| echo: false
+# read in FIA data
+ca_data <- readFIA("/Volumes/Alyssa_Backup/CA_CSV") 
+
+# identify condition, plot, and tree tables
+ca_cond <- ca_data$COND #cond table
+ca_plot <- ca_data$PLOT #plot table
+ca_tree <- ca_data$TREE #tree table
+
+
+# get grm by plot
+grm_plot <- growMort(ca_data, byPlot = TRUE, stateVar = "CARB_AG")
+
+# join
+ca_grm_table <- grm_plot %>%
+  # Join tables
+  left_join(ca_cond, by = 'PLT_CN') # The foreign key for the COND table is PLT_CN. There is always a match of the PLT_CN value to the CN value in the PLOT table.
+
+# make variables factors
+ca_grm_table$OWNGRPCD <- as.factor(ca_grm_table$OWNGRPCD)
+ca_grm_table$FORTYPCD <- as.factor(ca_grm_table$FORTYPCD)
+ca_grm_table$TRTCD1 <- as.factor(ca_grm_table$TRTCD1)
+ca_grm_table$SITECLCD <- as.factor(ca_grm_table$SITECLCD)
+ca_grm_table$PHYSCLCD <- as.factor(ca_grm_table$PHYSCLCD)
+ca_grm_table$RESERVCD <- as.factor(ca_grm_table$RESERVCD)
+ca_grm_table$YEAR <- as.factor(ca_grm_table$YEAR)
+ca_grm_table$DSTRBCD1 <- as.factor(ca_grm_table$DSTRBCD1)
+ca_grm_table$DSTRBCD2 <- as.factor(ca_grm_table$DSTRBCD2)
+ca_grm_table$DSTRBCD3 <- as.factor(ca_grm_table$DSTRBCD3)
+```
+
+Mill Travel Time (from Biosum)
+
+```{r}
+#| echo: false
+# read in mill travel time data
+min_travel_time <- read_csv("min_travel_time.csv")
+
+# filter by CA
+ca_min_travel_time <- min_travel_time[min_travel_time$STATE == 'CA',] #this leaves some plots with FIPS code 41 (OR), even though STATE = CA
+# filter for CA FIPS code (6)
+ca_min_travel_time <- min_travel_time[min_travel_time$STATECD == '6',]
+
+# the last 5 digits of pltID in ca_grm_table are PLOT IDs from ca_min_travel time
+
+# make new column in ca_grm_with last 5 digits of pltID
+ca_grm_table1 <- ca_grm_table
+
+ca_grm_table1$PLOT_CD <- substring(ca_grm_table$pltID, nchar(ca_grm_table$pltID) - 4)
+
+# now pivot so that time to chips and merchantable facilities are separate columns
+ca_min_travel_time_clean <- ca_min_travel_time %>%
+  dplyr::select(PLOT, BIOCD_DEF, ONE_WAY_HOURS) %>%
+  group_by(PLOT, BIOCD_DEF) %>%
+  # summarise(ONE_WAY_HOURS = min(ONE_WAY_HOURS), .groups = "drop") %>%
+  pivot_wider(
+    names_from = BIOCD_DEF,
+    values_from = ONE_WAY_HOURS,
+    names_prefix = "OWH_"
+  )
+
+# rename PLOT to match with ca_grm PLOT_CD
+names(ca_min_travel_time_clean)[names(ca_min_travel_time_clean) == "PLOT"] <- "PLOT_CD"
+
+# make PLOT_CD a character
+ca_min_travel_time_clean$PLOT_CD <- as.character(ca_min_travel_time_clean$PLOT_CD)
+
+# join with ca_grm
+ca_grm_travel <- ca_grm_table1 %>%
+  full_join(ca_min_travel_time_clean, by = 'PLOT_CD')
+
+```
+
+Fire Spatial Data (MTBS)
+
+1.  fire presence
+
+```{r}
+# read in spatial fire perimeters
+fire_path <- "/Users/alyssajain/Downloads/mtbs_perimeter_data/mtbs_perims_DD.shp"
+burns <- st_read(fire_path)
+
+#check crs
+st_crs(burns)
+
+# filter for wildfire
+wildfire_all <- burns[burns$Incid_Type == "Wildfire", ]
+
+# wildfire_tbl <- as_tibble(wildfire_all)
+
+wildfire_tbl <- wildfire_all %>%
+  as_tibble() %>%
+  slice_head(n = 10)
+
+
+
+# read in State Shapefiles to clip boundaries
+states <- st_read("/Users/alyssajain/Downloads/cb_2018_us_state_5m/cb_2018_us_state_5m.shp")
+v
+
+#check crs
+st_crs(states) # matches
+
+# filter states to CA
+ca <- states[states$STUSPS %in% c( "CA"), ]
+
+# Replace invalid geometries with valid ones
+wildfire_all <- st_make_valid(wildfire_all)
+ca <- st_make_valid(ca)
+
+# clip burns to CA
+CA_wildfire <- st_intersection(wildfire_all, ca)
+
+wildfire <- CA_wildfire
+
+
+# Convert FIA plot data to an sf object 
+  # first remove NAs
+  ca_plot_clean <- ca_plot %>%
+  filter(!is.na(LON) & !is.na(LAT))
+  
+  #then use coords to convert to sf
+  fia_sf <- st_as_sf(ca_plot_clean, coords = c("LON", "LAT"), crs = 4326)
+  
+# read in CA resource regions
+resource_reg <- read_sf("CAResourceAreas/CAResourceAreas.shp")
+  head(resource_reg)
+    # info: 6 resource areas (ResourceAr)
+  # match crs to fia
+  resource_reg <- st_transform(resource_reg, st_crs(fia_sf))
+
+  # Dissolve multipolygons into single polygons by region name
+  resource_reg_clean <- resource_reg %>%
+    group_by(ResourceAr) %>%
+    summarise(geometry = st_union(geometry), .groups = "drop") %>%
+    st_as_sf()
+
+  # join resource reg to fia data
+  fia_with_region <- st_join(fia_sf, resource_reg_clean, left = TRUE)
+
+  
+# Reproject wildfire data to match FIA CRS
+wildfire <- st_transform(wildfire, st_crs(fia_sf))
+
+# filter year > 2002
+wildfire_2002 <- wildfire %>%
+  filter(Ig_Date >= as.Date("2002-01-01"))
+
+# This returns a list: one element per plot, containing indices of intersecting fire polygons
+wildfire_intersections <- st_intersects(fia_with_region, wildfire_2002, sparse = TRUE)
+
+# Check if each plot has any intersections (i.e., non-empty list element)
+fia_with_region$wildfire_intersect <- lengths(wildfire_intersections) > 0
+
+# Convert to 1/0 instead of TRUE/FALSE 
+fia_with_region$wildfire_intersect <- as.integer(fia_with_region$wildfire_intersect)
+
+# now we will join to ca_grm_travel
+  # First create a plot ID column to match ca_grm_travel$pltID. This is UNITCD_STATECD_COUNTYCD_PLOT.
+    fia_with_region$pltID <- paste(fia_with_region$UNITCD, fia_with_region$STATECD, fia_with_region$COUNTYCD, fia_with_region$PLOT, sep = "_")
+
+  # Then extract just the plot ID, resource area, and fire_intersect column from the sf object
+  wildfire_flag_df <- fia_with_region %>%
+  sf::st_drop_geometry() %>%
+  dplyr::select(pltID, wildfire_intersect, ResourceAr) 
+
+  # make pltID a character
+  wildfire_flag_df$pltID <- as.character(wildfire_flag_df$pltID)
+  
+  # make sure each plot appears only once, in case a plot experiences multiple fires
+  wildfire_flag_unique <- wildfire_flag_df %>%
+  group_by(pltID) %>%
+  summarise(
+    wildfire_intersect = max(wildfire_intersect, na.rm = TRUE),
+    ResourceAr = first(ResourceAr),   # keep the resource region
+    .groups = "drop"
+  )
+  
+  
+  # now join to ca_grm
+  ca_grm_travel_wildfire <- ca_grm_travel %>%
+  dplyr::left_join(wildfire_flag_unique, by = "pltID")
+  
+  # make fire_intersect a factor
+  ca_grm_travel_wildfire$wildfire_intersect <- as.factor(ca_grm_travel_wildfire$wildfire_intersect)
+  
+  # make resource area a factor
+  ca_grm_travel_wildfire$ResourceAr <- as.factor(ca_grm_travel_wildfire$ResourceAr)  
+```
+
+2.  Fire Severity
+
+```{r}
+
+# -----------------------------
+# 1. Load FIA data (many rows per plot)
+# -----------------------------
+fia_big <- fia_sf
+
+# Creat pltID
+  # First create a plot ID column to match ca_grm_travel$pltID. This is UNITCD_STATECD_COUNTYCD_PLOT.
+    fia_big$pltID <- paste(fia_big$UNITCD, fia_big$STATECD, fia_big$COUNTYCD, fia_big$PLOT, sep = "_")
+
+  # make pltID a character
+  fia_big$pltID <- as.character(fia_big$pltID)
+
+# Identify the unique plot geometry (one centroid per pltID)
+fia_plots <- fia_big %>%
+  group_by(pltID) %>%
+  summarise(geometry = st_union(geometry), .groups = "drop") %>%
+  st_as_sf()
+
+# -----------------------------
+# 2. Reproject FIA geometries to MTBS CRS
+# -----------------------------
+# read 1 MTBS file to get CRS
+first_mtbs <- rast(list.files("/Users/alyssajain/FIA/CA_mtbs_unzipped",
+                              full.names = TRUE,
+                              pattern = "\\.tif$")[1])
+
+fia_plots <- st_transform(fia_plots, crs(first_mtbs))
+
+# -----------------------------
+# 3. Create severity flag table per plot
+# -----------------------------
+fia_sev <- fia_plots %>%
+  st_drop_geometry() %>%
+  mutate(sev1 = 0, sev2 = 0, sev3 = 0, sev4 = 0, sev5 = 0)
+
+# -----------------------------
+# 4. Loop over all MTBS rasters
+# -----------------------------
+sev_files <- list.files("/Users/alyssajain/FIA/CA_mtbs_unzipped",
+                        full.names = TRUE, pattern = "\\.tif$")
+
+for (f in sev_files) {
+  
+  r <- rast(f)
+  
+  # Extract severity for each UNIQUE plot
+  vals <- terra::extract(r, vect(fia_plots))[,2]   # col2 = severity
+  vals[is.na(vals)] <- 0 # plots that are not in the mosaic should be 0, not NA
+  
+  # Update flags (ignore 0 and 6)
+  fia_sev$sev1 <- fia_sev$sev1 | (vals == 1)
+  fia_sev$sev2 <- fia_sev$sev2 | (vals == 2)
+  fia_sev$sev3 <- fia_sev$sev3 | (vals == 3)
+  fia_sev$sev4 <- fia_sev$sev4 | (vals == 4)
+  fia_sev$sev5 <- fia_sev$sev5 | (vals == 5)
+}
+
+# Convert logical → integer
+fia_sev <- fia_sev %>% mutate(across(starts_with("sev"), as.integer))
+
+# -----------------------------
+# 5. Join back into full FIA dataset
+# -----------------------------
+fia_with_severity <- fia_big %>%
+  left_join(fia_sev, by = "pltID")
+
+# join with ca_grm
+# now join to ca_grm
+ca_grm_travel_wildfire_sev <- ca_grm_travel_wildfire %>%
+  dplyr::left_join(fia_sev, by = "pltID")
+
+# change this later, just so rest of code runs with ca_grm_travel_wildfire
+ca_grm_travel_wildfire <- ca_grm_travel_wildfire_sev
+
+```
+
+Resource Regions Color Palette
+
+```{r}
+# resource regions
+
+# set colors
+region_cols <- c(
+  "North Coast California" = "#440154",
+  "Central Coast California" = "#414487",
+  "Northern Interior California" = "#2A788E",
+  "Sacramento California" = "#22A884",
+  "San Joaquin California" = "#7AD151",
+  "Southern California California" = "#FDE725"
+)
+# plot resource regions
+plot(resource_reg, col = region_cols[resource_reg$ResourceAr])
+```
+
+## **Findings:**
+
+### *Q1)* We ran a logistic regression to determine how distance from the nearest mill affects the probability of fire, using CA resource region, forest type, and year as a random effect.
+
+```{r}
+  # Merchantable
+   
+  # fixed effects for resource area, year and fortypcd
+    q1M1 <- glm(wildfire_intersect ~ OWH_Merchantable + ResourceAr + FORTYPCD + YEAR,
+                      data = ca_grm_travel_wildfire, family = binomial)
+    summary(q1M1)
+    
+    
+    # Extract coefficients (log-odds)
+    fixef_vals_q1M1 <- fixef(q1M1)
+    
+    # Tidy summary with SE, z, p-values
+    fixed_summary_q1M1 <- broom.mixed::tidy(q1M1, effects = "fixed")
+    
+    # Add odds ratios for interpretation
+    fixed_summary_q1M1 <- fixed_summary_q1M1 %>%
+      mutate(
+        odds_ratio = exp(estimate),
+        prob_change = plogis(estimate)
+      )
+    
+    print(fixed_summary_q1M1)
+    view(fixed_summary_q1M1)
+    
+    
+
+        
+  # Chips
+    
+    # fixed effects for resource area, year and fortypcd
+    q1C1 <- glm(wildfire_intersect ~ OWH_Chips + ResourceAr + FORTYPCD + YEAR,
+                      data = ca_grm_travel_wildfire, family = binomial)
+    summary(q1C1)
+    
+    # Extract coefficients (log-odds)
+    fixef_vals_q1C1 <- fixef(q1C1)
+    
+    # Tidy summary with SE, z, p-values
+    fixed_summary_q1C1 <- broom.mixed::tidy(q1C1, effects = "fixed")
+    
+    # Add odds ratios for interpretation
+    fixed_summary_q1C1 <- fixed_summary_q1C1 %>%
+      mutate(
+        odds_ratio = exp(estimate),
+        prob_change = plogis(estimate)
+      )
+    
+    print(fixed_summary_q1C1)
+    view(fixed_summary_q1C1)
+    
+    
+```
+
+**Interpretation:** Using the MTBS data to determine fire occurrence, we find that for every additional hour in distance to a merchantable mill, the log odds of fire increase by 0.49 (p \< 2e-16). Similarly, for every additional hour in distance to a chips mill, the log odds of fire increase by 0.53 (p \< 2e-16). These results indicate that plots farther away from mills are significantly more likely to experience fire.
+
+### *Q2)* To see if decreased management is the mechanism increasing probability of fire farther from mills, we ran a logistic regression to see how distance from mills affects probability of treatment (which mostly refers to cutting, as well as a little preparation for planting).
+
+Prep Data
+
+```{r}
+#| echo: false
+# clean data for TRTCD = 10 (cutting) or 20 (Site preparation - Clearing, slash burning, chopping, disking, bedding, or other practices clearly intended to prepare a site for either natural or artificial regeneration.)
+  ca_grm_travel_trtcd_grp <- ca_grm_travel_wildfire %>%
+  mutate(
+    TRTCD_CUT_PREP = if_else(
+      as.numeric(as.character(TRTCD1)) %in% 10:20 |
+      as.numeric(as.character(TRTCD2)) %in% 10:20 |
+      as.numeric(as.character(TRTCD3)) %in% 10:20,
+      1, 0
+    )
+  )
+```
+
+Run logistic regression
+
+```{r}
+# Merchantable
+  q2aM <- glm(TRTCD_CUT_PREP ~ OWH_Merchantable + ResourceAr + FORTYPCD + 
+    YEAR, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2aM)
+  
+# check differences between regions
+    # Slopes (trends) by region
+slopes <- emtrends(
+  mod_region,
+  specs = "ResourceAr",
+  var = "OWH_Merchantable"
+)
+
+# Pairwise comparisons vs Central Coast
+contr <- contrast(
+  slopes,
+  method = "trt.vs.ctrl",
+  ref = "Central Coast California",
+  adjust = "tukey"
+)
+
+summary(contr)
+  
+  # Chips
+ q2aC <- glm(TRTCD_CUT_PREP ~ OWH_Chips + ResourceAr + FORTYPCD + 
+    YEAR, data = ca_grm_travel_trtcd_grp, family = "binomial")
+  summary(q2aC)
+```
+
+**Interpretation:** The log odds of treatment decrease by 0.59 and 0.61 for merchantable and chip mills, respectively (p \<2e-16). 
+
+Figures (just for chip mill since they're almost the same)
+
+```{r}
+
+# Ensure numeric/factor types
+ca_grm_travel_trtcd_grp <- ca_grm_travel_trtcd_grp %>%
+  mutate(
+    OWH_Merchantable = as.numeric(as.character(OWH_Chips)),
+    YEAR = factor(YEAR),
+    FORTYPCD = factor(FORTYPCD),
+    ResourceAr = factor(ResourceAr)
+  )
+
+#  Overall pooled model (no interactions)
+mod_overall <- glm(
+  TRTCD_CUT_PREP ~ OWH_Chips + ResourceAr + YEAR + FORTYPCD,
+  data = ca_grm_travel_trtcd_grp,
+  family = binomial
+)
+
+# Extract overall slope & CI
+overall_slope <- broom::tidy(mod_overall, conf.int = TRUE) %>%
+  filter(term == "OWH_Chips") %>%
+  mutate(
+    region = "Overall",
+    OR = exp(estimate),
+    OR_low = exp(conf.low),
+    OR_high = exp(conf.high)
+  ) %>%
+  dplyr::select(region, estimate, std.error, OR, OR_low, OR_high)
+
+# Region-specific slopes from interaction model
+mod_region <- glm(
+  TRTCD_CUT_PREP ~ OWH_Chips * ResourceAr + YEAR + FORTYPCD,
+  data = ca_grm_travel_trtcd_grp,
+  family = binomial
+)
+
+coefs <- coef(mod_region)
+vcov_mat <- vcov(mod_region)
+regions <- levels(ca_grm_travel_trtcd_grp$ResourceAr)
+
+region_slopes <- lapply(regions, function(r) {
+  int_name <- paste0("OWH_Chips:ResourceAr", r)
+  
+  if (int_name %in% names(coefs)) {
+    slope <- coefs["OWH_Chips"] + coefs[int_name]
+    se <- sqrt(
+      vcov_mat["OWH_Chips","OWH_Chips"] +
+      vcov_mat[int_name,int_name] +
+      2*vcov_mat["OWH_Chips", int_name]
+    )
+  } else {
+    slope <- coefs["OWH_Chips"]  # reference region
+    se <- sqrt(vcov_mat["OWH_Chips","OWH_Chips"])
+  }
+  
+  data.frame(
+    region = r,
+    estimate = slope,
+    std.error = se,
+    OR = exp(slope),
+    OR_low = exp(slope - 1.96*se),
+    OR_high = exp(slope + 1.96*se)
+  )
+}) %>% bind_rows()
+
+# Put Overall first
+all_slopes <- bind_rows(overall_slope, region_slopes)
+
+# order x-axis
+all_slopes$region <- factor(
+  all_slopes$region,
+  levels = c("Overall", regions)  # Overall first, then regions
+)
+
+# Palette
+region_cols <- c(
+  "Overall" = "#000000",  # black
+  "North Coast California" = "#440154",
+  "Central Coast California" = "#414487",
+  "Northern Interior California" = "#2A788E",
+  "Sacramento California" = "#22A884",
+  "San Joaquin California" = "#7AD151",
+  "Southern California California" = "#FDE725"
+)
+
+# plot
+ggplot(all_slopes, aes(x = region, y = OR, ymin = OR_low, ymax = OR_high, color = region)) +
+  geom_pointrange(size = 2.5, fatten = 2) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "grey40") +
+  scale_color_manual(values = region_cols) +
+  scale_y_log10() +
+  labs(
+    x = NULL,
+    y = "Odds ratio (log scale)",
+    title = "Effect of travel time to chip mills on thinning",
+    subtitle = "Overall effect and region-specific slopes (adjusted for YEAR + FORTYPCD)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16),
+    axis.ticks = element_line(linewidth = 1.2),
+    axis.ticks.length = unit(0.3, "cm"),
+    axis.line = element_line(linewidth = 1, color = "black"),
+
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5), # center
+    plot.subtitle = element_text(hjust = 0.5) # center
+  )
+```
+
+Make orient plots for presentation
+
+```{r}
+# first compute y limits and tick breaks so they're the same for all plots
+y_limits <- range(
+  c(all_slopes$OR_low, all_slopes$OR_high),
+  na.rm = TRUE
+)
+
+y_limits <- y_limits[y_limits > 0] # log scale so must be greater than 0
+
+
+# blank
+base_plot <- ggplot(all_slopes, aes(x = region, y = OR)) +
+  geom_blank() +                 # forces axes, draws nothing
+  scale_y_log10(
+    limits = y_limits, # add limits
+    breaks = c(0.3, 0.5, 1)) + # add breaks
+  labs(
+    x = NULL,
+    y = "Odds ratio (log scale)",
+    title = "Effect of travel time to chip mills on management",
+    subtitle = "Overall effect and region-specific slopes"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16),
+    axis.ticks = element_line(linewidth = 1.2),
+    axis.ticks.length = unit(0.3, "cm"),
+    axis.line = element_line(linewidth = 1.2, color = "black"),
+
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+# with reference line at 1
+orient_plot <- base_plot +
+  geom_hline(
+    yintercept = 1,
+    linetype = "dashed",
+    color = "grey40"
+  )
+
+# with data
+final_plot <- orient_plot +
+  geom_pointrange(
+    aes(
+      ymin = OR_low,
+      ymax = OR_high,
+      color = region
+    ),
+    size = 2.5,
+    fatten = 2
+  ) +
+  scale_color_manual(values = region_cols)
+
+# plot all
+base_plot
+orient_plot
+final_plot
+```
+
+### Nonlinear effect of distance on fire?
+
+**Fixed effects linear model with bins**
+
+##### Faceted for both mill types
+
+```{r}
+
+
+# ------------------------------------------------
+# Function to run binned FE model and extract coefs
+# ------------------------------------------------
+
+run_binned_model <- function(data, travel_var, facility_name){
+
+  # 1 Copy dataset so we can modify safely
+  df <- data
+
+  # 2 Create bins from the selected travel-time variable
+  df$bin <- cut(
+    df[[travel_var]],
+    breaks = seq(0,5,0.5),
+    include.lowest = TRUE,
+    labels = FALSE,
+    right = FALSE
+  )
+
+  # 3 Run fixed effects regression
+  model <- felm(
+    wildfire_intersect ~ as.factor(bin) | ResourceAr + YEAR + FORTYPCD,
+    data = df
+  )
+  
+  # 4 print model output so you see the coefficients
+  cat("\n\n============================\n")
+  cat("Model for:", facility_name, "\n")
+  cat("============================\n")
+  print(summary(model))
+
+  # 5 Extract coefficients
+  coefs <- tidy(model, conf.int = TRUE) %>%
+    filter(grepl("as.factor\\(bin\\)", term)) %>%
+    mutate(
+      bin = as.numeric(gsub("as.factor\\(bin\\)", "", term)),
+      hours_mid = (bin - 1)*0.5 + 0.25,
+      facility = facility_name
+    )
+
+  return(coefs)
+}
+
+# ------------------------------------------------
+# Run models
+# ------------------------------------------------
+# copy data
+ca_grm_travel_trtcd_grp_bins <- ca_grm_travel_trtcd_grp
+
+merchant_coefs <- run_binned_model(
+  ca_grm_travel_trtcd_grp,
+  "OWH_Merchantable",
+  "Merchantable mills"
+)
+
+chips_coefs <- run_binned_model(
+  ca_grm_travel_trtcd_grp,
+  "OWH_Chips",
+  "Chip facilities"
+)
+
+
+plot_data <- bind_rows(merchant_coefs, chips_coefs)
+
+# make facility a factor
+plot_data$facility <- factor(
+  plot_data$facility,
+  levels = c("Merchantable mills", "Chip facilities")
+)
+
+# ------------------------------------------------
+# Plot
+# ------------------------------------------------
+
+ggplot(plot_data, aes(hours_mid, estimate)) +
+
+  geom_ribbon(
+    aes(ymin = conf.low, ymax = conf.high),
+    fill = "#74add1",
+    alpha = 0.25
+  ) +
+
+  geom_smooth(
+    method = "loess",
+    se = FALSE,
+    span = 0.6,
+    color = "#0570b0",
+    linewidth = 1.3
+  ) +
+
+  facet_wrap(~facility, ncol = 2) +
+
+  labs(
+    x = "Travel time to facility (hours)",
+    y = "Change in wildfire probability",
+    title = "Travel Time to Processing Facilities and Wildfire Probability"
+  ) +
+
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  )
+
+
+
+```
+
+###### Facet By Region
+
+```{r}
+# get rid of regions we don't want (low sample size)
+ca_clean <- ca_grm_travel_trtcd_grp %>%
+  filter(!ResourceAr %in% c(
+    "Southern California California",
+    "Central Coast California"
+  ))
+
+# get bins for chips and merch
+ca_clean <- ca_clean %>%
+  mutate(
+    chips_bin = floor(OWH_Chips / 0.5),
+    merch_bin = floor(OWH_Merchantable / 0.5)
+  )
+
+# convert to long format
+travel_long <- ca_clean %>%
+   dplyr::select(
+    wildfire_intersect,
+    YEAR,
+    FORTYPCD,
+    ResourceAr,
+    chips_bin,
+    merch_bin
+  ) %>%
+  tidyr::pivot_longer(
+    cols = c(chips_bin, merch_bin),
+    names_to = "mill_type",
+    values_to = "bin"
+  ) %>%
+  mutate(
+    mill_type = recode(
+      mill_type,
+      chips_bin = "Chips",
+      merch_bin = "Merchantable"
+    )
+  )
+
+# exclude groups with too few observations to avoid errors
+travel_long_clean <- travel_long %>%
+  filter(!is.na(bin), !is.na(wildfire_intersect)) %>%
+  group_by(ResourceAr, mill_type) %>%
+  filter(n() > 10) %>%   # minimum observations safeguard
+  ungroup()
+
+# fit models for both bin types and all regions
+models <- travel_long_clean %>%
+  group_split(ResourceAr, mill_type) %>%
+  map(~ felm(
+    wildfire_intersect ~ as.factor(bin) | YEAR + FORTYPCD,
+    data = .x
+  ))
+
+model_keys <- travel_long_clean %>%
+  distinct(ResourceAr, mill_type)
+
+names(models) <- paste(model_keys$ResourceAr, model_keys$mill_type)
+
+# extract coefficients 
+coef_df <- map_dfr(names(models), function(name) {
+
+  m <- models[[name]]
+
+  parts <- strsplit(name, " ")[[1]]
+  region <- paste(parts[-length(parts)], collapse = " ")
+  mill <- parts[length(parts)]
+
+  coefs <- tidy(m, conf.int = TRUE) %>%
+    filter(grepl("as.factor\\(bin\\)", term)) %>%
+    mutate(
+      bin = as.numeric(gsub("as\\.factor\\(bin\\)", "", term)),
+      hours_mid = bin * 0.5 + 0.25
+    )
+
+  # reference bin (intercept)
+  intercept <- tidy(m) %>%
+    filter(term == "(Intercept)") %>%
+    pull(estimate)
+
+  coefs %>%
+    add_row(
+      estimate = intercept,
+      conf.low = intercept,
+      conf.high = intercept,
+      bin = 0,
+      hours_mid = 0.25
+    ) %>%
+    mutate(
+      ResourceAr = region,
+      mill_type = mill
+    )
+})
+
+# make colors lighter for chips
+region_cols_chips <- colorspace::lighten(region_cols, 0.4)
+
+coef_df <- coef_df %>%
+  mutate(
+    plot_col = ifelse(
+      mill_type == "Chips",
+      region_cols_chips[ResourceAr],
+      region_cols[ResourceAr]
+    )
+  )
+
+# plot
+ggplot(
+  coef_df,
+  aes(
+    x = hours_mid,
+    y = estimate,
+    color = plot_col,
+    fill = plot_col,
+    group = interaction(ResourceAr, mill_type),
+    linetype = mill_type,
+    alpha = mill_type
+  )
+) +
+  geom_ribbon(
+    aes(ymin = conf.low, ymax = conf.high),
+    color = NA
+  ) +
+  geom_smooth(
+    method = "loess",
+    se = FALSE,
+    span = 0.6,
+    linewidth = 1.2
+  ) +
+  facet_wrap(~ ResourceAr) +
+  scale_color_identity() +
+  scale_fill_identity() +
+  scale_alpha_manual(values = c(
+    Chips = 0.15,
+    Merchantable = 0.25
+  )) +
+  labs(
+    x = "Hours to Facility",
+    y = "Wildfire Probability Coefficient",
+    title = "Regional Effect of Travel Time on Wildfire Probability",
+    linetype = "Facility Type",
+    alpha = "Facility Type"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.spacing = unit(3, "lines")
+  )
+```
+
+make a table with coefficients
+
+```{r}
+coef_table <- purrr::imap_dfr(models, function(model, name) {
+
+  broom::tidy(model) %>%
+    mutate(model = name)
+
+})
+coef_table
+```
+
+##### Merchantable
+
+separate plots into bins
+
+```{r}
+
+# get the range of travel times
+summary(ca_grm_travel_trtcd_grp$OWH_Merchantable) # max: 4.9980
+
+tmp <- ca_grm_travel_trtcd_grp %>%
+  mutate(test = ifelse(
+    OWH_Merchantable >= 0 & OWH_Merchantable < 0.5, 0, 
+    ifelse(OWH_Merchantable >= 0.5 & OWH_Merchantable < 1, 1,
+         ifelse(OWH_Merchantable >= 1 & OWH_Merchantable < 1.5, 2,
+              ifelse(OWH_Merchantable >= 1.5 & OWH_Merchantable < 2, 3,
+                     ifelse(OWH_Merchantable >= 2 & OWH_Merchantable < 2.5, 4,
+                            ifelse(OWH_Merchantable >= 2.5 & OWH_Merchantable < 3, 5,
+                                   ifelse(OWH_Merchantable >= 3 & OWH_Merchantable < 3.5, 6,
+                                          ifelse(OWH_Merchantable >= 3.5 & OWH_Merchantable < 4, 7,
+                                                 ifelse(OWH_Merchantable >= 4 & OWH_Merchantable < 4.5, 8,
+                                                        ifelse(OWH_Merchantable >= 4.5 & OWH_Merchantable < 5, 9, 10)))))))))))
+  
+# filter by resource area
+# model <- felm(formula = sev4 ~ as.factor(test)  |       YEAR + FORTYPCD,     data = filter(tmp, ResourceAr == "Southern California California"))
+
+# unfiltered
+model <- felm(formula = wildfire_intersect ~ as.factor(test)  |    YEAR + FORTYPCD,     data = tmp)
+
+summary(model)
+                       
+```
+
+plot felm relationship per bin
+
+```{r}
+# --- 1️⃣ Extract bin-level coefficients from felm model ---
+coefs <- broom::tidy(model, conf.int = TRUE) %>%
+  filter(grepl("as.factor\\(test\\)", term))
+
+# --- 2️⃣ Clean up term names and assign bin midpoints ---
+coefs <- coefs %>%
+  mutate(
+    bin = as.numeric(gsub("as\\.factor\\(test\\)", "", term)),
+    hours_mid = bin * 0.5 + 0.25  # adjust if your bins differ
+  )
+
+# --- 3️⃣ Add baseline (reference bin = intercept) ---
+intercept <- broom::tidy(model) %>%
+  filter(term == "(Intercept)") %>%
+  pull(estimate)
+
+coefs <- coefs %>%
+  add_row(
+    term = "(Intercept)",
+    estimate = intercept,
+    conf.low = intercept,
+    conf.high = intercept,
+    bin = -1,
+    hours_mid = 0
+  )
+
+# --- 4️⃣ Create Brookings-style plot ---
+base_plot_nl <- ggplot(coefs, aes(x = hours_mid, y = estimate)) +
+  
+  # Axis and label formatting
+  scale_x_continuous(
+    name = "Hours to Merchantable Facility",
+    expand = expansion(mult = c(0.02, 0.02))
+  ) +
+  scale_y_continuous(
+    name = "Wildfire Probability Coefficient",
+    expand = expansion(mult = c(0.05, 0.05))
+  ) +
+  
+  # Title and subtitle (optional)
+  labs(
+    title = "Binned Effect of Travel Time on Wildfire Probability",
+    subtitle = "fixed effects = resource area, forest type, and year"
+  ) +
+  
+  # Clean, professional theme
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#08306b"),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray30"),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    axis.title.y = element_text(margin = margin(r = 10)),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(color = "gray85", linetype = "dotted"),
+    axis.text = element_text(color = "gray25", size = 12),
+    plot.margin = margin(10, 15, 10, 15),
+    axis.title = element_text(size = 14),
+    axis.line = element_line(linewidth = 1, color = "black"),
+    axis.ticks = element_line(linewidth = 1.2),
+    axis.ticks.length = unit(0.3, "cm")
+  )
+
+final_plot_nl <- base_plot_nl + 
+    # Confidence ribbon (subtle, transparent)
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              fill = "#74add1", alpha = 0.25) +
+  
+  # Smooth nonlinear curve (primary visual focus)
+  geom_smooth(
+    method = "loess", se = FALSE, span = 0.6,
+    color = "#0570b0", size = 1.3, linetype = "solid"
+  ) 
+
+base_plot_nl
+final_plot_nl
+
+```
+
+Look for reasons for decline after 2.5 hours
+
+```{r}
+# Get # of plots in each bin
+counts <- filter(
+  tmp
+  #, ResourceAr == "Southern California California"
+  ) %>% count(test)
+print(counts)
+
+# get median OWH to merchantable
+summary(as.numeric(ca_min_travel_time_clean$OWH_Merchantable))
+```
+
+Potential covariates of mill distance that could drive wildfire prob?
+
+```{r}
+# stocking density
+   gsstk_lm <- lm(GSSTKCD ~ OWH_Merchantable , data = ca_grm_travel_wildfire)
+    summary(gsstk_lm)
+      # increases with distance to mill (goes from overstocked to nonstocked)
+    
+  # check felm, excluding fixed effects
+    gsstk_felm <- felm(formula = GSSTKCD ~ as.factor(test)  |      0,     data = tmp)
+    summary(gsstk_felm)
+    
+  # felm with fixed effects
+    gsstk_felm <- felm(formula = GSSTKCD ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp)
+    summary(gsstk_felm)
+    # coefficients change with fixed effects, so stocking density doesn't independently covary with mill distance
+
+# moisture
+    
+    # make it numeric (even though it is not ordinal)
+    #-------------------------------------------------
+        phys_lm <- lm(as.numeric(PHYSCLCD) ~ OWH_Merchantable , data = ca_grm_travel_trtcd_grp)
+        summary(phys_lm)
+          # increases with distance to mill 
+        
+      # check felm, excluding fixed effects
+        phys_felm <- felm(formula = as.numeric(PHYSCLCD) ~ as.factor(test)  |      0,     data = tmp)
+        summary(phys_felm)
+        
+      # felm with fixed effects
+        phys_felm <- felm(formula = as.numeric(PHYSCLCD) ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp)
+        summary(phys_felm)
+        
+    # check chi sq
+    #-------------------------------------------------
+      # make table
+        phys_table = table(tmp$PHYSCLCD, tmp$test)
+        print(phys_table)
+        
+        print(chisq.test(phys_table))
+        
+    # multinom log reg
+      multinom_logreg <- multinom(PHYSCLCD ~ OWH_Merchantable + ResourceAr + YEAR + FORTYPCD,                                    data = ca_grm_travel_trtcd_grp)
+      
+      # Summary
+      summary(multinom_logreg)
+      
+      # Get p-values (since nnet::multinom doesn't print them by default)
+      z <- summary(multinom_logreg)$coefficients / summary(multinom_logreg)$standard.errors
+      p <- 2 * (1 - pnorm(abs(z)))
+      p
+        
+
+# Basal area living trees
+    balive_lm <- lm(BALIVE ~ OWH_Merchantable , data = ca_grm_travel_trtcd_grp)
+    summary(balive_lm)
+     
+    
+  # check felm, excluding fixed effects
+    balive_felm <- felm(formula = BALIVE ~ as.factor(test)  |      0,     data = tmp)
+    summary(balive_felm)
+    
+  # felm with fixed effects
+    balive_felm <- felm(formula = BALIVE ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp)
+    summary(balive_felm)
+```
+
+###### Facet by Region
+
+prep data
+
+```{r}
+# get rid of socal
+ca_nosocal_grm_travel_trtcd_grp <- ca_grm_travel_trtcd_grp %>%
+  filter(ResourceAr != "Southern California California")
+
+# get rid of central coast
+# get rid of socal
+ca_nosocal_grm_travel_trtcd_grp <- ca_nosocal_grm_travel_trtcd_grp %>%
+  filter(ResourceAr != "Central Coast California")
+
+# define regions
+regions <- unique(ca_nosocal_grm_travel_trtcd_grp$ResourceAr)
+
+# get bins
+ca_grm_travel_trtcd_grp_binned <- ca_nosocal_grm_travel_trtcd_grp %>%
+  mutate(
+    merchantable_bin = floor(OWH_Merchantable / 0.5)
+  )
+
+# fit one binned model per region
+models <- map(
+  regions,
+  ~ felm(
+      wildfire_intersect ~ as.factor(merchantable_bin) | YEAR + FORTYPCD,
+      data = filter(ca_grm_travel_trtcd_grp_binned, ResourceAr == .x)
+    )
+)
+
+names(models) <- regions
+
+# extract coefficients
+coef_df <- map_dfr(names(models), function(rg) {
+
+  m <- models[[rg]]
+
+  # bin coefficients
+  coefs <- tidy(m, conf.int = TRUE) %>%
+    filter(grepl("as.factor\\(merchantable_bin\\)", term)) %>%
+    mutate(
+      bin = as.numeric(gsub("as\\.factor\\(merchantable_bin\\)", "", term)),
+      hours_mid = bin * 0.5 + 0.25,
+      ResourceAr = rg
+    )
+
+  # reference bin (intercept)
+  intercept <- tidy(m) %>%
+    filter(term == "(Intercept)") %>%
+    pull(estimate)
+
+  coefs %>%
+    add_row(
+      term = "(Intercept)",
+      estimate = intercept,
+      conf.low = intercept,
+      conf.high = intercept,
+      bin = 0,
+      hours_mid = 0.25,
+      ResourceAr = rg
+    )
+})
+```
+
+plot
+
+```{r}
+ggplot(
+  coef_df,
+  aes(
+    x = hours_mid, 
+    y = estimate,
+    color = ResourceAr,
+    fill = ResourceAr)
+) +
+  geom_ribbon(
+    aes(ymin = conf.low, ymax = conf.high),
+    alpha = 0.2,
+    color = NA
+  ) +
+  geom_smooth(
+    method = "loess",
+    se = FALSE,
+    span = 0.6,
+    linewidth = 1.2
+  ) +
+  facet_wrap(~ ResourceAr) +
+  scale_color_manual(values = region_cols) +
+  scale_fill_manual(values = region_cols) +
+  labs(
+    x = "Hours to Merchantable Facility",
+    y = "Wildfire Probability Coefficient",
+    title = "Regional Effect of Travel Time on Wildfire Probability"
+  ) +
+  theme_minimal() + 
+  theme (
+    panel.spacing = unit(3, "lines")
+  )
+
+```
+
+##### Chips
+
+put plot in bins
+
+```{r}
+# get the range of travel times
+summary(ca_grm_travel_trtcd_grp$OWH_Chips) # max:  4.959  
+summary(ca_grm_travel_trtcd_grp$OWH_Merchantable) # max: 4.9980
+
+tmp <- ca_grm_travel_trtcd_grp %>%
+  mutate(test = ifelse(
+    OWH_Chips >= 0 & OWH_Chips < 0.5, 0, 
+    ifelse(OWH_Chips >= 0.5 & OWH_Chips < 1, 1,
+         ifelse(OWH_Chips >= 1 & OWH_Chips < 1.5, 2,
+              ifelse(OWH_Chips >= 1.5 & OWH_Chips < 2, 3,
+                     ifelse(OWH_Chips >= 2 & OWH_Chips < 2.5, 4,
+                            ifelse(OWH_Chips >= 2.5 & OWH_Chips < 3, 5,
+                                   ifelse(OWH_Chips >= 3 & OWH_Chips < 3.5, 6,
+                                          ifelse(OWH_Chips >= 3.5 & OWH_Chips < 4, 7,
+                                                 ifelse(OWH_Chips >= 4 & OWH_Chips < 4.5, 8,
+                                                        ifelse(OWH_Chips >= 4.5 & OWH_Chips < 5, 9, 10)))))))))))
+  
+
+model <- felm(formula = wildfire_intersect ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp)
+
+summary(model)
+
+# get the range of travel times but wiith smaller bins
+summary(ca_grm_travel_trtcd_grp$OWH_Chips) # max:  4.959  
+summary(ca_grm_travel_trtcd_grp$OWH_Merchantable) # max: 4.9980
+
+tmp1 <- ca_grm_travel_trtcd_grp %>%
+  mutate(test = ifelse(
+    OWH_Chips >= 0 & OWH_Chips < 0.25, 0,
+    ifelse(OWH_Chips >= 0.25 & OWH_Chips < 0.5, 1,
+      ifelse(OWH_Chips >= 0.5 & OWH_Chips < 0.75, 2,
+        ifelse(OWH_Chips >= 0.75 & OWH_Chips < 1, 3,
+          ifelse(OWH_Chips >= 1 & OWH_Chips < 1.25, 4,
+            ifelse(OWH_Chips >= 1.25 & OWH_Chips < 1.5, 5,
+              ifelse(OWH_Chips >= 1.5 & OWH_Chips < 1.75, 6,
+                ifelse(OWH_Chips >= 1.75 & OWH_Chips < 2, 7,
+                  ifelse(OWH_Chips >= 2 & OWH_Chips < 2.25, 8,
+                    ifelse(OWH_Chips >= 2.25 & OWH_Chips < 2.5, 9,
+                      ifelse(OWH_Chips >= 2.5 & OWH_Chips < 2.75, 10,
+                        ifelse(OWH_Chips >= 2.75 & OWH_Chips < 3, 11,
+                          ifelse(OWH_Chips >= 3 & OWH_Chips < 3.25, 12,
+                            ifelse(OWH_Chips >= 3.25 & OWH_Chips < 3.5, 13,
+                              ifelse(OWH_Chips >= 3.5 & OWH_Chips < 3.75, 14,
+                                ifelse(OWH_Chips >= 3.75 & OWH_Chips < 4, 15,
+                                  ifelse(OWH_Chips >= 4 & OWH_Chips < 4.25, 16,
+                                    ifelse(OWH_Chips >= 4.25 & OWH_Chips < 4.5, 17,
+                                      ifelse(OWH_Chips >= 4.5 & OWH_Chips < 4.75, 18,
+                                        ifelse(OWH_Chips >= 4.75 & OWH_Chips < 5, 19, 20)
+                                      )
+                                    )
+                                  )
+                                )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  ))
+
+  
+
+# model <- felm(formula = wildfire_intersect ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp1)
+
+summary(model)
+                       
+```
+
+plot felm relationship per bin
+
+```{r}
+# --- 1️⃣ Extract bin-level coefficients from felm model ---
+coefs <- broom::tidy(model, conf.int = TRUE) %>%
+  filter(grepl("as.factor\\(test\\)", term))
+
+# --- 2️⃣ Clean up term names and assign bin midpoints ---
+coefs <- coefs %>%
+  mutate(
+    bin = as.numeric(gsub("as\\.factor\\(test\\)", "", term)),
+    hours_mid = bin * 0.5 + 0.25  # adjust if your bins differ
+  )
+
+# --- 3️⃣ Add baseline (reference bin = intercept) ---
+intercept <- broom::tidy(model) %>%
+  filter(term == "(Intercept)") %>%
+  pull(estimate)
+
+coefs <- coefs %>%
+  add_row(
+    term = "(Intercept)",
+    estimate = intercept,
+    conf.low = intercept,
+    conf.high = intercept,
+    bin = -1,
+    hours_mid = 0
+  )
+
+# --- 4️⃣ Create Brookings-style plot ---
+ggplot(coefs, aes(x = hours_mid, y = estimate)) +
+  
+  # Confidence ribbon (subtle, transparent)
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              fill = "#74add1", alpha = 0.25) +
+  
+  # Smooth nonlinear curve (primary visual focus)
+  geom_smooth(
+    method = "loess", se = FALSE, span = 0.6,
+    color = "#0570b0", size = 1.3, linetype = "solid"
+  ) +
+  
+  # Axis and label formatting
+  scale_x_continuous(
+    name = "Hours to Chip Facility",
+    expand = expansion(mult = c(0.02, 0.02))
+  ) +
+  scale_y_continuous(
+    name = "Wildfire Probability Coefficient",
+    expand = expansion(mult = c(0.05, 0.05))
+  ) +
+  
+  # Title and subtitle (optional)
+  labs(
+    title = "Binned Effect of Travel Time Wildfire Probability",
+    subtitle = "fixed effects = resource area, forest type, and year"
+  ) +
+  
+  # Clean, professional theme
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#08306b"),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray30"),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    axis.title.y = element_text(margin = margin(r = 10)),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(color = "gray85", linetype = "dotted"),
+    axis.text = element_text(color = "gray25", size = 12),
+    plot.margin = margin(10, 15, 10, 15),
+    axis.title = element_text(size = 14),
+    axis.line = element_line(linewidth = 1, color = "black"),
+    axis.ticks = element_line(linewidth = 1.2),
+    axis.ticks.length = unit(0.3, "cm")
+  )
+
+base_plot_nl
+```
+
+###### Facet by Region
+
+prep data
+
+```{r}
+# get rid of socal
+ca_nosocal_grm_travel_trtcd_grp <- ca_grm_travel_trtcd_grp %>%
+  filter(ResourceAr != "Southern California California")
+
+# get rid of central coast
+# get rid of socal
+ca_nosocal_grm_travel_trtcd_grp <- ca_nosocal_grm_travel_trtcd_grp %>%
+  filter(ResourceAr != "Central Coast California")
+
+# define regions
+regions <- unique(ca_nosocal_grm_travel_trtcd_grp$ResourceAr)
+
+# get bins
+ca_grm_travel_trtcd_grp_binned <- ca_nosocal_grm_travel_trtcd_grp %>%
+  mutate(
+    chips_bin = floor(OWH_Chips / 0.5)
+  )
+
+# fit one binned model per region
+models <- map(
+  regions,
+  ~ felm(
+      wildfire_intersect ~ as.factor(chips_bin) | YEAR + FORTYPCD,
+      data = filter(ca_grm_travel_trtcd_grp_binned, ResourceAr == .x)
+    )
+)
+
+names(models) <- regions
+
+# extract coefficients
+coef_df <- map_dfr(names(models), function(rg) {
+
+  m <- models[[rg]]
+
+  # bin coefficients
+  coefs <- tidy(m, conf.int = TRUE) %>%
+    filter(grepl("as.factor\\(chips_bin\\)", term)) %>%
+    mutate(
+      bin = as.numeric(gsub("as\\.factor\\(chips_bin\\)", "", term)),
+      hours_mid = bin * 0.5 + 0.25,
+      ResourceAr = rg
+    )
+
+  # reference bin (intercept)
+  intercept <- tidy(m) %>%
+    filter(term == "(Intercept)") %>%
+    pull(estimate)
+
+  coefs %>%
+    add_row(
+      term = "(Intercept)",
+      estimate = intercept,
+      conf.low = intercept,
+      conf.high = intercept,
+      bin = 0,
+      hours_mid = 0.25,
+      ResourceAr = rg
+    )
+})
+
+```
+
+plot
+
+```{r}
+ggplot(
+  coef_df,
+  aes(x = hours_mid, y = estimate)
+) +
+  geom_ribbon(
+    aes(ymin = conf.low, ymax = conf.high),
+    fill = "steelblue",
+    alpha = 0.2
+  ) +
+  geom_smooth(
+    method = "loess",
+    se = FALSE,
+    span = 0.6,
+    color = "steelblue",
+    linewidth = 1.2
+  ) +
+  facet_wrap(~ ResourceAr) +
+  labs(
+    x = "Hours to Chip Mill",
+    y = "Wildfire Probability Coefficient",
+    title = "Nonlinear Relationship Between Chip Mill Access and Wildfire "
+  ) +
+  theme_minimal()
+
+```
+
+## Severity
+
+**Nonlinear Model for each severity class**
+
+reorganize bins for merchantable mills
+
+```{r}
+# get the range of travel times
+summary(ca_grm_travel_trtcd_grp$OWH_Merchantable) # max: 4.9980
+
+tmp <- ca_grm_travel_trtcd_grp %>%
+  mutate(test = ifelse(
+    OWH_Merchantable >= 0 & OWH_Merchantable < 0.5, 0, 
+    ifelse(OWH_Merchantable >= 0.5 & OWH_Merchantable < 1, 1,
+         ifelse(OWH_Merchantable >= 1 & OWH_Merchantable < 1.5, 2,
+              ifelse(OWH_Merchantable >= 1.5 & OWH_Merchantable < 2, 3,
+                     ifelse(OWH_Merchantable >= 2 & OWH_Merchantable < 2.5, 4,
+                            ifelse(OWH_Merchantable >= 2.5 & OWH_Merchantable < 3, 5,
+                                   ifelse(OWH_Merchantable >= 3 & OWH_Merchantable < 3.5, 6,
+                                          ifelse(OWH_Merchantable >= 3.5 & OWH_Merchantable < 4, 7,
+                                                 ifelse(OWH_Merchantable >= 4 & OWH_Merchantable < 4.5, 8,
+                                                        ifelse(OWH_Merchantable >= 4.5 & OWH_Merchantable < 5, 9, 10)))))))))))
+
+# tmp <- ca_grm_travel_trtcd_grp %>%
+#   mutate(test = ifelse(
+#     OWH_Chips >= 0 & OWH_Chips < 0.5, 0, 
+#     ifelse(OWH_Chips >= 0.5 & OWH_Chips < 1, 1,
+#          ifelse(OWH_Chips >= 1 & OWH_Chips < 1.5, 2,
+#               ifelse(OWH_Chips >= 1.5 & OWH_Chips < 2, 3,
+#                      ifelse(OWH_Chips >= 2 & OWH_Chips < 2.5, 4,
+#                             ifelse(OWH_Chips >= 2.5 & OWH_Chips < 3, 5,
+#                                    ifelse(OWH_Chips >= 3 & OWH_Chips < 3.5, 6,
+#                                           ifelse(OWH_Chips >= 3.5 & OWH_Chips < 4, 7,
+#                                                  ifelse(OWH_Chips >= 4 & OWH_Chips < 4.5, 8,
+#                                                         ifelse(OWH_Chips >= 4.5 & OWH_Chips < 5, 9, 10)))))))))))
+#   
+
+# filter by resource area
+# model <- felm(formula = sev4 ~ as.factor(test)  |       YEAR + FORTYPCD,     data = filter(tmp, ResourceAr == "Southern California California"))
+
+# unfiltered
+model <- felm(formula = wildfire_intersect ~ as.factor(test)  |    YEAR + FORTYPCD,     data = tmp)
+
+summary(model)
+```
+
+prep for plot
+
+```{r}
+# model all sev classes
+model_sev1 <- felm(formula = sev1 ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp)
+summary(model_sev1)
+
+model_sev2 <- felm(formula = sev2 ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp)
+summary(model_sev2)
+
+model_sev3 <- felm(formula = sev3 ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp)
+summary(model_sev3)
+
+model_sev4 <- felm(formula = sev4 ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp)
+summary(model_sev4)
+
+# combine
+models <- list(
+  sev1 = model_sev1,
+  sev2 = model_sev2,
+  sev3 = model_sev3,
+  sev4 = model_sev4
+)
+
+```
+
+plot
+
+```{r}
+
+# extract and clean coefficients
+coef_df <- map_dfr(names(models), function(sev) {
+
+  m <- models[[sev]]
+
+  # bin-level coefficients
+  coefs <- tidy(m, conf.int = TRUE) %>%
+    filter(grepl("as.factor\\(test\\)", term)) %>%
+    mutate(
+      bin = as.numeric(gsub("as\\.factor\\(test\\)", "", term)),
+      hours_mid = bin * 0.5 + 0.25,   # adjust if needed
+      severity = sev
+    )
+
+  # intercept = reference bin
+  intercept <- tidy(m) %>%
+    filter(term == "(Intercept)") %>%
+    pull(estimate)
+
+  coefs %>%
+    add_row(
+      term = "(Intercept)",
+      estimate = intercept,
+      conf.low = intercept,
+      conf.high = intercept,
+      bin = -1,
+      hours_mid = 0,
+      severity = sev
+    )
+})
+
+# filter by 2 and 4 
+coef_df <- coef_df %>%
+  filter(severity %in% c("sev2", "sev4"))
+
+# plot
+ggplot(
+  coef_df,
+  aes(
+    x = hours_mid,
+    y = estimate,
+    color = severity,
+    fill = severity,
+    group = severity
+  )
+) +
+
+  # confidence ribbons (subtle)
+  geom_ribbon(
+    aes(ymin = conf.low, ymax = conf.high),
+    alpha = 0.18,
+    color = NA
+  ) +
+
+  # nonlinear smoothed curves
+  geom_smooth(
+    method = "loess",
+    se = FALSE,
+    span = 0.6,
+    linewidth = 1.2
+  ) +
+
+  scale_x_continuous(
+    name = "Hours to Chip Mill",
+    expand = expansion(mult = c(0.02, 0.02))
+  ) +
+  scale_y_continuous(
+    name = "Wildfire Probability Coefficient",
+    expand = expansion(mult = c(0.05, 0.05))
+  ) +
+  
+  scale_color_discrete(
+    labels = c("sev2" = "Low Severity",
+               "sev4" = "High Severity")
+  ) +
+  scale_fill_discrete(
+    labels = c("sev2" = "Low Severity",
+               "sev4" = "High Severity")
+  ) +
+
+  labs(
+    title = "Nonlinear Effect of Mill Access on Wildfire Probability",
+    subtitle = "Binned fixed-effects estimates by severity class",
+    color = "Severity",
+    fill = "Severity"
+  ) +
+
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(color = "gray85", linetype = "dotted"),
+    axis.text = element_text(color = "gray25")
+  )
+
+```
+
+**Linear Model for each severity class**
+
+Overall Merchantable
+
+```{r}
+
+# Overall
+#4
+model_4 <- felm(formula = sev4 ~ OWH_Merchantable  |       YEAR + FORTYPCD,     data = filter(ca_grm_travel_trtcd_grp))
+
+summary(model_4)
+
+#3
+model_3 <- felm(formula = sev3 ~ OWH_Merchantable  |       YEAR + FORTYPCD,     data = filter(ca_grm_travel_trtcd_grp))
+
+summary(model_3)
+
+# 2
+model_2 <- felm(formula = sev2 ~ OWH_Merchantable  |       YEAR + FORTYPCD,     data = filter(ca_grm_travel_trtcd_grp))
+
+summary(model_2)
+
+#1
+model_1 <- felm(formula = sev1 ~ OWH_Merchantable  |       YEAR + FORTYPCD,     data = filter(ca_grm_travel_trtcd_grp))
+
+summary(model_1)
+
+models <- list(
+  "sev1" = model_1,
+  "sev2" = model_2,
+  "sev3" = model_3,
+  "sev4" = model_4
+)
+
+####### linear plot #######
+coef_df <- bind_rows(
+  lapply(names(models), function(nm) {
+    tidy(models[[nm]], conf.int = TRUE) %>%
+      filter(term == "OWH_Merchantable") %>%
+      mutate(severity = nm)
+  })
+)
+
+ggplot(coef_df, aes(x = severity, y = estimate)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.1) +
+  scale_x_discrete(
+    labels = c(
+      sev1 = "Unburned-Low Severity",
+      sev2 = "Low Severity",
+      sev3 = "Moderate Severity",
+      sev4 = "High Severity"
+    )
+  ) +
+  labs(
+    x = "Fire Severity Class",
+    y = "Δ Probability (per 1-hour increase in travel time)",
+    title = "Association Between Travel Time to Merchantable Mill and Wildfire"
+  ) +
+  theme_minimal()  +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      size = 14,
+      face = "bold"
+    )
+  )
+
+####### predicted plot #######
+
+# Construct prediction grid
+newdat <- tibble(
+  OWH_Merchantable = seq(
+    min(ca_grm_travel_trtcd_grp$OWH_Merchantable, na.rm = TRUE),
+    max(ca_grm_travel_trtcd_grp$OWH_Merchantable, na.rm = TRUE),
+    length.out = 200
+  )
+)
+
+# Prediction function for felm models without intercept
+predict_felm_partial <- function(model, newdat, name) {
+  b1 <- coef(model)[["OWH_Merchantable"]]
+
+  tibble(
+    OWH_Merchantable = newdat$OWH_Merchantable,
+    pred = b1 * newdat$OWH_Merchantable,
+    severity = name
+  )
+}
+
+# Build combined prediction dataframe
+pred_df <- bind_rows(
+  predict_felm_partial(model_1, newdat, "sev1"),
+  predict_felm_partial(model_2, newdat, "sev2"),
+  predict_felm_partial(model_3, newdat, "sev3"),
+  predict_felm_partial(model_4, newdat, "sev4")
+)
+
+# Plot partial predictions
+ggplot(pred_df, aes(x = OWH_Merchantable, y = pred, color = severity)) +
+  geom_line(linewidth = 1) +
+  labs(
+    x = "OWH_Merchantable",
+    y = "Partial Predicted Severity (within FE)",
+    title = "Partial Effect of OWH_Merchantable Across Severity Models",
+    color = "Model"
+  ) +
+  theme_minimal()
+```
+
+make point plots
+
+```{r}
+# step by step plot for presentation
+
+# get limits and breaks
+y_limits <- range(
+  c(coef_df$conf.low, coef_df$conf.high),
+  na.rm = TRUE
+)
+
+y_breaks <- pretty(y_limits, n = 5)
+
+# base plot
+base_plot_sev <- ggplot(coef_df, aes(x = severity, y = estimate)) +
+  geom_blank() +
+
+  # LOCKED Y SCALE
+  scale_y_continuous(
+    limits = y_limits,
+    breaks = y_breaks
+  ) +
+
+  scale_x_discrete(
+    labels = c(
+      sev1 = "Unburned–Low Severity",
+      sev2 = "Low Severity",
+      sev3 = "Moderate Severity",
+      sev4 = "High Severity"
+    )
+  ) +
+
+  labs(
+    x = "Fire Severity Class",
+    y = "Δ Probability (per 1-hour increase in travel time)",
+    title = "Effect of Travel Time on Wildfire Probability, by Severity"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    # AXIS TEXT
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+
+    # AXIS LINES (thicker)
+    axis.line = element_line(linewidth = 1, color = "black"),
+
+    # TICKS (thicker + longer)
+    axis.ticks = element_line(linewidth = 1.2),
+    axis.ticks.length = unit(0.3, "cm"),
+
+    # TITLE
+    plot.title = element_text(
+      hjust = 0.5,
+      size = 16,
+      face = "bold"),
+    
+    # MARGINS
+    axis.title.x = element_text(
+      size = 14,
+      margin = margin(t = 12)
+    ),
+    axis.title.y = element_text(
+      size = 14,
+      margin = margin(r = 12)
+    )
+  )
+
+# final plot
+final_plot_sev <- base_plot_sev +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = conf.low, ymax = conf.high),
+    width = 0.1,
+  )
+
+
+# plot
+base_plot_sev
+final_plot_sev
+```
+
+Overall Chips
+
+```{r}
+# Overall
+#4
+model_4 <- felm(formula = sev4 ~ OWH_Chips  |       YEAR + FORTYPCD,     data = filter(ca_grm_travel_trtcd_grp))
+
+summary(model_4)
+
+#3
+model_3 <- felm(formula = sev3 ~ OWH_Chips  |       YEAR + FORTYPCD,     data = filter(ca_grm_travel_trtcd_grp))
+
+summary(model_3)
+
+# 2
+model_2 <- felm(formula = sev2 ~ OWH_Chips  |       YEAR + FORTYPCD,     data = filter(ca_grm_travel_trtcd_grp))
+
+summary(model_2)
+
+#1
+model_1 <- felm(formula = sev1 ~ OWH_Chips  |       YEAR + FORTYPCD,     data = filter(ca_grm_travel_trtcd_grp))
+
+summary(model_1)
+
+models <- list(
+  "sev1" = model_1,
+  "sev2" = model_2,
+  "sev3" = model_3,
+  "sev4" = model_4
+)
+
+####### linear plot #######
+coef_df <- bind_rows(
+  lapply(names(models), function(nm) {
+    tidy(models[[nm]], conf.int = TRUE) %>%
+      filter(term == "OWH_Chips") %>%
+      mutate(severity = nm)
+  })
+)
+
+ggplot(coef_df, aes(x = severity, y = estimate)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.1) +
+   scale_x_discrete(
+    labels = c(
+      sev1 = "Unburned-Low Severity",
+      sev2 = "Low Severity",
+      sev3 = "Moderate Severity",
+      sev4 = "High Severity"
+    )
+  ) +
+  labs(
+    x = "Fire Severity Class",
+    y = "Δ Probability (per 1-hour increase in travel time)",
+    title = "Association Between Travel Time to Merchantable Mill and Wildfire"
+  ) +
+  theme_minimal()  +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      size = 14,
+      face = "bold"
+    )
+  )
+
+####### predicted plot #######
+
+# Construct prediction grid
+newdat <- tibble(
+  OWH_Chips = seq(
+    min(ca_grm_travel_trtcd_grp$OWH_Chips, na.rm = TRUE),
+    max(ca_grm_travel_trtcd_grp$OWH_Chips, na.rm = TRUE),
+    length.out = 200
+  )
+)
+
+# Prediction function for felm models without intercept
+predict_felm_partial <- function(model, newdat, name) {
+  b1 <- coef(model)[["OWH_Chips"]]
+
+  tibble(
+    OWH_Chips = newdat$OWH_Chips,
+    pred = b1 * newdat$OWH_Chips,
+    severity = name
+  )
+}
+
+# Build combined prediction dataframe
+pred_df <- bind_rows(
+  predict_felm_partial(model_1, newdat, "sev1"),
+  predict_felm_partial(model_2, newdat, "sev2"),
+  predict_felm_partial(model_3, newdat, "sev3"),
+  predict_felm_partial(model_4, newdat, "sev4")
+)
+
+# Plot partial predictions
+ggplot(pred_df, aes(x = OWH_Chips, y = pred, color = severity)) +
+  geom_line(linewidth = 1) +
+  labs(
+    x = "OWH_Chips",
+    y = "Partial Predicted Severity (within FE)",
+    title = "Partial Effect of OWH_Chips Across Severity Models",
+    color = "Model"
+  ) +
+  theme_minimal()
+```

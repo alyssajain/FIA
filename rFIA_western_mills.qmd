@@ -51,30 +51,38 @@ FIA data and GRM
 #| echo: false
 # read in FIA data
 ca_data <- readFIA("/Volumes/Alyssa_Backup/CA_CSV") 
+or_data <- readFIA("/Volumes/Alyssa_Backup/OR_CSV")
+wa_data <- readFIA("/Volumes/Alyssa_Backup/WA_CSV")
 
-ca_cond <- ca_data$COND #cond table
-ca_plot <- ca_data$PLOT #plot table
-ca_tree <- ca_data$TREE #tree table
+west_data <- readFIA("/Volumes/Alyssa_Backup/WEST_CSV", states = c("OR", "WA", "CA"))
+
+west_cond <- west_data$COND #cond table
+west_plot <- west_data$PLOT #plot table
+west_tree <- west_data$TREE #tree table
+
+# get most recent
+# most recent 
+west_data <- clipFIA(west_data, mostRecent = TRUE)
 
 # get grm by plot
-grm_plot <- growMort(ca_data, byPlot = TRUE, stateVar = "CARB_AG")
+west_grm_plot <- growMort(west_data, byPlot = TRUE, stateVar = "CARB_AG")
 
 # join
-ca_grm_table <- grm_plot %>%
+west_grm_table <- west_grm_plot %>%
   # Join tables
-  left_join(ca_cond, by = 'PLT_CN') # The foreign key for the COND table is PLT_CN. There is always a match of the PLT_CN value to the CN value in the PLOT table.
+  left_join(west_cond, by = 'PLT_CN') # The foreign key for the COND table is PLT_CN. There is always a match of the PLT_CN value to the CN value in the PLOT table.
 
 # make variables factors
-ca_grm_table$OWNGRPCD <- as.factor(ca_grm_table$OWNGRPCD)
-ca_grm_table$FORTYPCD <- as.factor(ca_grm_table$FORTYPCD)
-ca_grm_table$TRTCD1 <- as.factor(ca_grm_table$TRTCD1)
-ca_grm_table$SITECLCD <- as.factor(ca_grm_table$SITECLCD)
-ca_grm_table$PHYSCLCD <- as.factor(ca_grm_table$PHYSCLCD)
-ca_grm_table$RESERVCD <- as.factor(ca_grm_table$RESERVCD)
-ca_grm_table$YEAR <- as.factor(ca_grm_table$YEAR)
-ca_grm_table$DSTRBCD1 <- as.factor(ca_grm_table$DSTRBCD1)
-ca_grm_table$DSTRBCD2 <- as.factor(ca_grm_table$DSTRBCD2)
-ca_grm_table$DSTRBCD3 <- as.factor(ca_grm_table$DSTRBCD3)
+west_grm_table$OWNGRPCD <- as.factor(west_grm_table$OWNGRPCD)
+west_grm_table$FORTYPCD <- as.factor(west_grm_table$FORTYPCD)
+west_grm_table$TRTCD1 <- as.factor(west_grm_table$TRTCD1)
+west_grm_table$SITECLCD <- as.factor(west_grm_table$SITECLCD)
+west_grm_table$PHYSCLCD <- as.factor(west_grm_table$PHYSCLCD)
+west_grm_table$RESERVCD <- as.factor(west_grm_table$RESERVCD)
+west_grm_table$YEAR <- as.factor(west_grm_table$YEAR)
+west_grm_table$DSTRBCD1 <- as.factor(west_grm_table$DSTRBCD1)
+west_grm_table$DSTRBCD2 <- as.factor(west_grm_table$DSTRBCD2)
+west_grm_table$DSTRBCD3 <- as.factor(west_grm_table$DSTRBCD3)
 ```
 
 Mill Travel Time
@@ -84,16 +92,16 @@ Mill Travel Time
 # read in mill travel time data
 min_travel_time <- read_csv("min_travel_time.csv")
 
-# filter by CA
-ca_min_travel_time <- min_travel_time[min_travel_time$STATE == 'CA',] #this leaves some plots with FIPS code 41 (OR), even though STATE = CA
-ca_min_travel_time <- min_travel_time[min_travel_time$STATECD == '6',]
+# filter by West
+ca_min_travel_time <- min_travel_time[min_travel_time$STATE %in% c("OR", "WA", "CA"),] #this leaves some plots with FIPS code 41 (OR), even though STATE = CA
+ca_min_travel_time <- min_travel_time[min_travel_time$STATECD %in% c("41", "53", "6"),]
 
 # the last 5 digits of pltID in ca_grm_table are PLOT IDs from ca_min_travel time
 
 # make new column in ca_grm_with last 5 digits of pltID
-ca_grm_table1 <- ca_grm_table
+ca_grm_table1 <- west_grm_table
 
-ca_grm_table1$PLOT_CD <- substring(ca_grm_table$pltID, nchar(ca_grm_table$pltID) - 4)
+ca_grm_table1$PLOT_CD <- substring(west_grm_table$pltID, nchar(west_grm_table$pltID) - 4)
 
 # now pivot so that time to chips and merchantable facilities are separate columns
 ca_min_travel_time_clean <- ca_min_travel_time %>%
@@ -131,15 +139,23 @@ st_crs(burns)
 # filter for wildfire
 wildfire_all <- burns[burns$Incid_Type == "Wildfire", ]
 
+# wildfire_tbl <- as_tibble(wildfire_all)
+
+wildfire_tbl <- wildfire_all %>%
+  as_tibble() %>%
+  slice_head(n = 10)
+
+
+
 # read in State Shapefiles to clip boundaries
 states <- st_read("/Users/alyssajain/Downloads/cb_2018_us_state_5m/cb_2018_us_state_5m.shp")
-
+v
 #check crs
 st_crs(states) # matches
 
 # filter states to CA, WA, OR
 western_states <- states[states$STUSPS %in% c("CA", "WA", "OR"), ]
-ca <- states[states$STUSPS == "CA", ]
+ca <- states[states$STUSPS %in% c( "WA", "OR"), ]
 
 # Replace invalid geometries with valid ones
 wildfire_all <- st_make_valid(wildfire_all)
@@ -147,35 +163,37 @@ western_states <- st_make_valid(western_states)
 ca <- st_make_valid(ca)
 
 # clip burns to CA
-CA_wildfire <- st_intersection(wildfire_all, ca)
+CA_wildfire <- st_intersection(wildfire_all, western_states)
 
 wildfire <- CA_wildfire
 
 
 # Convert FIA plot data to an sf object 
   # first remove NAs
-  ca_plot_clean <- ca_plot %>%
+  ca_plot_clean <- west_plot %>%
   filter(!is.na(LON) & !is.na(LAT))
   
   #then use coords to convert to sf
   fia_sf <- st_as_sf(ca_plot_clean, coords = c("LON", "LAT"), crs = 4326)
   
-# read in CA resource regions
-resource_reg <- read_sf("CAResourceAreas/CAResourceAreas.shp")
-  head(resource_reg)
-    # info: 6 resource areas (ResourceAr)
-  # match crs to fia
-  resource_reg <- st_transform(resource_reg, st_crs(fia_sf))
-  
-  # Dissolve multipolygons into single polygons by region name
-  resource_reg_clean <- resource_reg %>%
-    group_by(ResourceAr) %>%
-    summarise(geometry = st_union(geometry), .groups = "drop") %>%
-    st_as_sf()
-  
-  # join resource reg to fia data
-  fia_with_region <- st_join(fia_sf, resource_reg_clean, left = TRUE)
+# # read in CA resource regions
+# resource_reg <- read_sf("CAResourceAreas/CAResourceAreas.shp")
+#   head(resource_reg)
+#     # info: 6 resource areas (ResourceAr)
+#   # match crs to fia
+#   resource_reg <- st_transform(resource_reg, st_crs(fia_sf))
+#   
+#   # Dissolve multipolygons into single polygons by region name
+#   resource_reg_clean <- resource_reg %>%
+#     group_by(ResourceAr) %>%
+#     summarise(geometry = st_union(geometry), .groups = "drop") %>%
+#     st_as_sf()
+#   
+#   # join resource reg to fia data
+#   fia_with_region <- st_join(fia_sf, resource_reg_clean, left = TRUE)
 
+fia_with_region <- fia_sf
+  
 # Reproject wildfire data to match FIA CRS
 wildfire <- st_transform(wildfire, st_crs(fia_sf))
 
@@ -195,7 +213,7 @@ fia_with_region$wildfire_intersect <- as.integer(fia_with_region$wildfire_inters
   # Then extract just the plot ID, resource area, and fire_intersect column from the sf object
   wildfire_flag_df <- fia_with_region %>%
   sf::st_drop_geometry() %>%
-  dplyr::select(pltID, wildfire_intersect, ResourceAr) 
+  dplyr::select(pltID, wildfire_intersect) 
 
   # make pltID a character
   wildfire_flag_df$pltID <- as.character(wildfire_flag_df$pltID)
@@ -205,7 +223,7 @@ fia_with_region$wildfire_intersect <- as.integer(fia_with_region$wildfire_inters
   group_by(pltID) %>%
   summarise(
     wildfire_intersect = max(wildfire_intersect, na.rm = TRUE),
-    ResourceAr = first(ResourceAr),   # keep the resource region
+    # ResourceAr = first(ResourceAr),   # keep the resource region
     .groups = "drop"
   )
   
@@ -218,7 +236,7 @@ fia_with_region$wildfire_intersect <- as.integer(fia_with_region$wildfire_inters
   ca_grm_travel_wildfire$wildfire_intersect <- as.factor(ca_grm_travel_wildfire$wildfire_intersect)
   
   # make resource area a factor
-  ca_grm_travel_wildfire$ResourceAr <- as.factor(ca_grm_travel_wildfire$ResourceAr)  
+  # ca_grm_travel_wildfire$ResourceAr <- as.factor(ca_grm_travel_wildfire$ResourceAr)  
  
 
 ```
@@ -230,7 +248,15 @@ head(wildfire)
 ```
 
 ```{r}
-# get burn history for wildfire and prescribed burns
+# MTBS Burn Severity
+
+# get files
+sev_dir <- "/Users/alyssajain/FIA/CA_mtbs_unzipped"
+
+sev_files <- list.files(sev_dir, full.names = TRUE, pattern = "\\.tif$")
+length(sev_files)
+
+
 
 ```
 
@@ -854,7 +880,7 @@ tmp <- ca_grm_travel_trtcd_grp %>%
                                                         ifelse(OWH_Merchantable >= 4.5 & OWH_Merchantable < 5, 9, 10)))))))))))
   
 
-model <- felm(formula = wildfire_intersect ~ as.factor(test)  |      ResourceAr + YEAR + FORTYPCD,     data = tmp)
+model <- felm(formula = wildfire_intersect ~ as.factor(test)  |    YEAR + FORTYPCD,     data = tmp)
 
 summary(model)
                        

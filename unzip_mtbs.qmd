@@ -1,0 +1,65 @@
+---
+title: "unzipping_mbts"
+format: html
+editor: visual
+---
+
+## Unzip Burn Severity Mosaics
+
+This script unzips and compiles tif files from the mtbs dataset
+
+```{r}
+#| echo: false
+library(fs)
+library(zip)
+```
+
+```{r}
+#| echo: false
+# ---- PATHS TO SET ----
+zip_root <- "/Users/alyssajain/Downloads/composite_data"   # folder containing year subfolders
+out_dir  <- "/Users/alyssajain/FIA/CA_mtbs_unzipped"              # folder to store the .tif files
+
+dir_create(out_dir)
+
+# ---- FIND ALL ZIP FILES ----
+zip_files <- dir_ls(zip_root, recurse = TRUE, glob = "*.zip")
+
+length(zip_files)
+
+```
+
+```{r}
+for (z in zip_files) {
+  
+  # Create a temporary folder for extraction
+  tmp_dir <- tempfile(pattern = "mtbs_")
+  dir_create(tmp_dir)
+  
+  # Unzip
+  unzip(z, exdir = tmp_dir)
+  
+  # Find any tif file inside the extracted structure
+  tif_files <- dir_ls(tmp_dir, recurse = TRUE, glob = "*.tif")
+  
+  if (length(tif_files) == 0) {
+    warning(paste("No TIFF found in:", z))
+    next
+  }
+  
+  # Build output filename (optional: preserve fire/year naming)
+  tif_name <- path_file(tif_files[1])
+  out_path <- path(out_dir, tif_name)
+  
+  # Copy the TIFF
+  file_copy(tif_files[1], out_path, overwrite = TRUE)
+  
+  message("Extracted: ", tif_name)
+  
+  # Clean up temporary dir
+  dir_delete(tmp_dir)
+}
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
